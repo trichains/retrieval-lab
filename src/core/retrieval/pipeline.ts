@@ -130,7 +130,7 @@ export interface PipelineHit {
   score: number;
   /** Final 1-based rank. */
   rank: number;
-  signals: { bm25?: Signal; vector?: Signal; fused?: Signal; rerank?: Signal & { before: number } };
+  signals: { bm25?: Signal; vector?: Signal; fused?: Signal; rerank?: { score: number; rank: number; before: number } };
 }
 
 export interface SearchResult {
