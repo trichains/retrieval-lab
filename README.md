@@ -1,5 +1,9 @@
 # Retrieval Lab
 
+![Retrieval Lab experiments view](docs/banner.webp)
+
+**Live demo:** https://retrieval-lab-zeta.vercel.app
+
 **A search and RAG laboratory: compare chunking, BM25, vector and hybrid retrieval, and measure them with recall@k, MRR and nDCG. Runs fully offline, no API key.**
 
 [Português](README.pt-BR.md) · [Architecture](docs/ARCHITECTURE.md) · MIT
