@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 
 export function cx(...classes: (string | false | null | undefined)[]): string {
   return classes.filter(Boolean).join(" ");
@@ -90,6 +90,15 @@ export function NumberField({
   className?: string;
 }) {
   const id = useId();
+  // Typing is kept as a draft and committed on blur or Enter, so typing "300" does not pass through
+  // "3" (clamped to the minimum) and does not rebuild the index on every keystroke. Spinner and
+  // arrow-key steps commit immediately.
+  const [draft, setDraft] = useState<string | null>(null);
+  const commit = (raw: string) => {
+    setDraft(null);
+    const n = Number(raw);
+    if (raw.trim() !== "" && Number.isFinite(n)) onChange(Math.min(max, Math.max(min, n)));
+  };
   return (
     <div className={className}>
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
@@ -98,13 +107,18 @@ export function NumberField({
         type="number"
         inputMode="numeric"
         className="field font-mono"
-        value={value}
+        value={draft ?? value}
         min={min}
         max={max}
         step={step}
         onChange={(e) => {
           const n = Number(e.target.value);
-          if (e.target.value !== "" && Number.isFinite(n)) onChange(Math.min(max, Math.max(min, n)));
+          if (Math.abs(Math.abs(n - value) - step) < 1e-9) commit(e.target.value);
+          else setDraft(e.target.value);
+        }}
+        onBlur={(e) => draft !== null && commit(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commit(e.currentTarget.value);
         }}
       />
     </div>

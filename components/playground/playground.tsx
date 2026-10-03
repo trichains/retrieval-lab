@@ -123,7 +123,43 @@ export function Playground() {
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[18.5rem_minmax(0,1fr)]">
-      <div className="lg:order-2 min-w-0">
+      <aside aria-label={dict.controls.strategy}>
+        <div className="lg:hidden">
+          <Button
+            variant="secondary"
+            className="w-full justify-between"
+            aria-expanded={controlsOpen}
+            aria-controls={controlsId}
+            onClick={() => setControlsOpen((o) => !o)}
+          >
+            <span>{dict.controls.strategy}</span>
+            <span aria-hidden className="font-mono text-faint">
+              {controlsOpen ? "−" : "+"}
+            </span>
+          </Button>
+        </div>
+        <Panel
+          as="div"
+          className={cx("mt-2 p-4 lg:sticky lg:top-4 lg:mt-0 lg:block", controlsOpen ? "block" : "hidden")}
+        >
+          <div id={controlsId} className="space-y-5">
+            <StrategyControls
+              config={state.config}
+              k={state.k}
+              onChange={(config) => setState((s) => ({ ...s, config }))}
+              onK={(k) => setState((s) => ({ ...s, k }))}
+            />
+            <Button
+              variant="ghost"
+              className="w-full"
+              onClick={() => setState((s) => ({ ...stateFromParams(new URLSearchParams()), query: s.query }))}
+            >
+              {dict.common.reset}
+            </Button>
+          </div>
+        </Panel>
+      </aside>
+      <div className="min-w-0">
         <div className="mb-4">
           <label htmlFor="query" className="mb-1.5 block text-[0.8rem] font-medium text-muted">
             {dict.playground.queryLabel}
@@ -253,43 +289,6 @@ export function Playground() {
           </>
         )}
       </div>
-
-      <aside className="lg:order-1" aria-label={dict.controls.strategy}>
-        <div className="lg:hidden">
-          <Button
-            variant="secondary"
-            className="w-full justify-between"
-            aria-expanded={controlsOpen}
-            aria-controls={controlsId}
-            onClick={() => setControlsOpen((o) => !o)}
-          >
-            <span>{dict.controls.strategy}</span>
-            <span aria-hidden className="font-mono text-faint">
-              {controlsOpen ? "−" : "+"}
-            </span>
-          </Button>
-        </div>
-        <Panel
-          as="div"
-          className={cx("mt-2 p-4 lg:sticky lg:top-4 lg:mt-0 lg:block", controlsOpen ? "block" : "hidden")}
-        >
-          <div id={controlsId} className="space-y-5">
-            <StrategyControls
-              config={state.config}
-              k={state.k}
-              onChange={(config) => setState((s) => ({ ...s, config }))}
-              onK={(k) => setState((s) => ({ ...s, k }))}
-            />
-            <Button
-              variant="ghost"
-              className="w-full"
-              onClick={() => setState((s) => ({ ...stateFromParams(new URLSearchParams()), query: s.query }))}
-            >
-              {dict.common.reset}
-            </Button>
-          </div>
-        </Panel>
-      </aside>
     </div>
   );
 }

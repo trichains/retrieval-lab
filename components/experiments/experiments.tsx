@@ -64,7 +64,11 @@ export function Experiments() {
 
   const customGrid = useMemo(() => {
     try {
-      const parsed = GridSchema.safeParse(JSON.parse(gridText));
+      // The browser demo never calls a network embedder: a pasted grid must use the offline hashing one.
+      const parsed = GridSchema.refine(
+        (g) => g.retrievers.every((r) => r.type === "bm25" || r.embedder.type === "hashing"),
+        { message: "only the offline hashing embedder is available in the browser", path: ["retrievers"] },
+      ).safeParse(JSON.parse(gridText));
       return parsed.success
         ? { ok: true as const, grid: parsed.data }
         : {

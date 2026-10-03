@@ -62,6 +62,7 @@ test.describe("corpus", () => {
     const stats = page.getByText(/\d+ chunks · min/);
     const before = await stats.textContent();
     await page.getByLabel("Size").fill("1500");
+    await page.getByLabel("Size").press("Enter");
     await expect(stats).not.toHaveText(before ?? "");
     await expect(page).toHaveURL(/cs=1500/);
   });

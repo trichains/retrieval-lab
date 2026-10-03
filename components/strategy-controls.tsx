@@ -32,7 +32,15 @@ export function ChunkerControls({ value, onChange }: { value: ChunkerConfig; onC
             min={sizeMin}
             max={sizeMax}
             step={value.type === "fixed-tokens" ? 10 : 50}
-            onChange={(size) => onChange(withChunkerNumbers(value, size, n.overlap))}
+            onChange={(size) =>
+              onChange(
+                withChunkerNumbers(
+                  value,
+                  size,
+                  n.overlap === undefined ? undefined : Math.min(n.overlap, Math.max(0, size - 1)),
+                ),
+              )
+            }
           />
           {n.overlap !== undefined && (
             <NumberField
