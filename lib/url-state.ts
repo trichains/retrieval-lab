@@ -140,6 +140,9 @@ export function stateFromParams(sp: URLSearchParams): PlaygroundState {
   const reranker = RerankerConfigSchema.safeParse(rerankerRaw);
   const aggregation = AggregationSchema.safeParse(sp.get("agg") ?? "max");
   const kParam = numberParam(sp, "k");
+  const agg = aggregation.success ? aggregation.data : "max";
+  // A reranker only combines with "max" aggregation (see rerankerAggregationOk); sum/mean win.
+  const rerankerConfig = reranker.success && agg === "max" ? reranker.data : DEFAULT_PIPELINE.reranker;
 
   return {
     query: (sp.get("q") ?? "").slice(0, 500),
@@ -148,8 +151,8 @@ export function stateFromParams(sp: URLSearchParams): PlaygroundState {
       ...DEFAULT_PIPELINE,
       chunker,
       retriever: retriever.success ? retriever.data : DEFAULT_PIPELINE.retriever,
-      reranker: reranker.success ? reranker.data : DEFAULT_PIPELINE.reranker,
-      aggregation: aggregation.success ? aggregation.data : "max",
+      reranker: rerankerConfig,
+      aggregation: agg,
       contextHeaders: sp.get("ctx") === "1",
     },
   };

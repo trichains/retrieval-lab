@@ -30,7 +30,6 @@ describe("playground URL state", () => {
         retriever: { type: "hybrid", fusion: { type: "weighted", alpha: 0.3 } },
         reranker: { type: "mmr", lambda: 0.5 },
         contextHeaders: true,
-        aggregation: "sum",
       }),
     };
     const sp = stateToParams(state);
@@ -43,7 +42,6 @@ describe("playground URL state", () => {
       fa: "0.3",
       rr: "mmr",
       rl: "0.5",
-      agg: "sum",
       ctx: "1",
     });
     expect(stateFromParams(sp)).toEqual(state);

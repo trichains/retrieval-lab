@@ -152,6 +152,8 @@ export function StrategyControls({
                   : type === "lexical"
                     ? { type, weight: 0.5, depth: 30 }
                     : { type: "none" },
+              // Rerankers only combine with max aggregation (sum/mean would count chunks).
+              ...(type !== "none" ? { aggregation: "max" as const } : {}),
             })
           }
         />
@@ -193,7 +195,9 @@ export function StrategyControls({
             value: a,
             label: dict.controls.aggregations[a] ?? a,
           }))}
-          onChange={(aggregation) => set({ aggregation })}
+          onChange={(aggregation) =>
+            set(aggregation === "max" ? { aggregation } : { aggregation, reranker: { type: "none" } })
+          }
         />
       </div>
 
