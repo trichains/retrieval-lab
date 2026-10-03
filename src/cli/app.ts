@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import {
+  checkEmbeddingBaseUrl,
   ChunkerConfigSchema,
   compareConfigs,
   createChunker,
@@ -19,7 +20,9 @@ import {
   type ChunkerConfig,
   type ChunkerType,
   type EmbedderConfig,
+  type EmbedderFactoryOptions,
   type PipelineConfig,
+  type RetrieverConfig,
 } from "../core";
 import { documentFromFile, loadCorpus, loadDataset } from "./corpus";
 import { oneLine, PLAIN, renderTable, truncate, type Style } from "./table";
@@ -29,6 +32,8 @@ export interface Io {
   err: (text: string) => void;
   style: Style;
   cwd: string;
+  /** Environment variables (defaults to process.env). Injected in tests. */
+  env?: Record<string, string | undefined>;
 }
 
 export class UsageError extends Error {}
@@ -59,7 +64,9 @@ search options:
   --k <n>                Results to show (default: 5)
   --context-headers      Index each chunk with its document title and heading path
   --embedder <name>      hashing | openai (default: hashing, fully offline)
-  --embed-url <url>      OpenAI-compatible base URL, e.g. http://localhost:11434/v1
+  --embed-url <url>      OpenAI-compatible base URL (or RLAB_EMBEDDINGS_BASE_URL). Must be
+                         https, except http on localhost, 127.0.0.1 or [::1]. Grid files
+                         cannot set it, so they cannot redirect your API key.
   --embed-model <name>   Embedding model name. The API key, if any, is read from
                          RLAB_EMBEDDINGS_API_KEY or OPENAI_API_KEY; it is never stored.
   --json                 Print the raw result as JSON
@@ -158,10 +165,38 @@ export function chunkerFromFlags(values: Values): ChunkerConfig {
 function embedderFromFlags(values: Values): EmbedderConfig {
   const type = oneOf(values.embedder, "embedder", ["hashing", "openai"] as const, "hashing");
   if (type === "hashing") return { type, dims: 1024, bigramWeight: 0.5, charWeight: 0.35 };
-  if (!values["embed-url"] || !values["embed-model"]) {
-    throw new UsageError("--embedder openai needs --embed-url and --embed-model");
+  if (!values["embed-model"]) throw new UsageError("--embedder openai needs --embed-model");
+  return { type, model: values["embed-model"], batchSize: 64 };
+}
+
+const usesNetworkEmbedder = (retrievers: readonly RetrieverConfig[]) =>
+  retrievers.some((r) => r.type !== "bm25" && r.embedder.type === "openai");
+
+/**
+ * The base URL for network embedders comes only from --embed-url or RLAB_EMBEDDINGS_BASE_URL, and
+ * must be https (or plain http on localhost). Anything else is refused before a key is attached.
+ */
+function embedderOptionsFor(values: Values, io: Io, needed: boolean): EmbedderFactoryOptions {
+  if (!needed) return {};
+  const raw = values["embed-url"] ?? (io.env ?? process.env).RLAB_EMBEDDINGS_BASE_URL;
+  if (!raw) throw new UsageError("The openai embedder needs --embed-url or RLAB_EMBEDDINGS_BASE_URL");
+  try {
+    const baseUrl = checkEmbeddingBaseUrl(raw);
+    io.err(io.style.dim(`embeddings: POST ${baseUrl}/embeddings`));
+    return { baseUrl };
+  } catch (error) {
+    throw new UsageError(error instanceof Error ? error.message : String(error));
   }
-  return { type, baseUrl: values["embed-url"], model: values["embed-model"], batchSize: 64 };
+}
+
+/** True when a raw grid tries to set a base URL on an embedder (never allowed, see above). */
+function gridSetsBaseUrl(raw: unknown): boolean {
+  const retrievers = (raw as { retrievers?: unknown } | null)?.retrievers;
+  if (!Array.isArray(retrievers)) return false;
+  return retrievers.some((r) => {
+    const embedder = (r as { embedder?: unknown } | null)?.embedder;
+    return typeof embedder === "object" && embedder !== null && "baseUrl" in embedder;
+  });
 }
 
 export function pipelineFromFlags(values: Values): PipelineConfig {
@@ -201,8 +236,9 @@ async function commandSearch(positionals: string[], values: Values, io: Io): Pro
   const k = num(values.k, "k", 5);
   if (!Number.isInteger(k) || k < 1) throw new UsageError("--k must be a positive integer");
   const config = pipelineFromFlags(values);
+  const embedderOptions = embedderOptionsFor(values, io, usesNetworkEmbedder([config.retriever]));
   const docs = loadCorpus(resolve(io.cwd, values.corpus ?? DEFAULT_CORPUS));
-  const pipeline = await RetrievalPipeline.build(docs, config);
+  const pipeline = await RetrievalPipeline.build(docs, config, embedderOptions);
   const result = await pipeline.search(query, { k });
   if (values.json) {
     io.out(JSON.stringify({ config, ...result }, null, 2));
@@ -260,6 +296,11 @@ async function commandEval(values: Values, io: Io): Promise<number> {
   } catch {
     throw new Error(`Cannot read grid ${gridPath} (missing or invalid JSON)`);
   }
+  if (gridSetsBaseUrl(rawGrid)) {
+    throw new UsageError(
+      `Grid ${gridPath} sets an embedder baseUrl. Base URLs are only accepted from --embed-url or RLAB_EMBEDDINGS_BASE_URL, so a grid file cannot send your API key elsewhere.`,
+    );
+  }
   const grid = GridSchema.safeParse(rawGrid);
   if (!grid.success) {
     throw new Error(
@@ -274,7 +315,9 @@ async function commandEval(values: Values, io: Io): Promise<number> {
   const { style } = io;
   io.err(style.dim(`Running ${dataset.queries.length} queries on ${dataset.documents.length} documents...`));
   const started = performance.now();
+  const embedderOptions = embedderOptionsFor(values, io, usesNetworkEmbedder(grid.data.retrievers));
   const result = await runExperiment(dataset, grid.data, {
+    embedderOptions,
     onProgress: (done, total, label) => io.err(style.dim(`  [${done}/${total}] ${label}`)),
   });
   const metric = values.metric ?? result.primaryMetric;

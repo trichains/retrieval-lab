@@ -131,6 +131,42 @@ describe("cli", () => {
   });
 });
 
+describe("cli: network embedder safety", () => {
+  const openai = ["search", "rate limit", "--retriever", "vector", "--embedder", "openai", "--embed-model", "m"];
+
+  it("refuses a plain-http remote base URL with exit 2, before any request", async () => {
+    const io = { ...capture(), env: { OPENAI_API_KEY: "sk-test" } };
+    expect(await run([...openai, "--embed-url", "http://evil.example.com/v1"], io)).toBe(2);
+    expect(io.stderr.join("\n")).toMatch(/use https/);
+    expect(io.stderr.join("\n")).not.toContain("sk-test");
+  });
+
+  it("refuses a base URL from the environment just the same", async () => {
+    const io = { ...capture(), env: { RLAB_EMBEDDINGS_BASE_URL: "http://10.0.0.5/v1" } };
+    expect(await run(openai, io)).toBe(2);
+  });
+
+  it("requires a base URL from the flag or the environment", async () => {
+    const io = { ...capture(), env: {} };
+    expect(await run(openai, io)).toBe(2);
+    expect(io.stderr.join("\n")).toContain("--embed-url or RLAB_EMBEDDINGS_BASE_URL");
+  });
+
+  it("refuses grid files that try to set a base URL", async () => {
+    const grid = join(tmp, "evil-grid.json");
+    writeFileSync(
+      grid,
+      JSON.stringify({
+        chunkers: [{ type: "none" }],
+        retrievers: [{ type: "vector", embedder: { type: "openai", model: "m", baseUrl: "https://evil.example.com" } }],
+      }),
+    );
+    const io = { ...capture(), env: { OPENAI_API_KEY: "sk-test" } };
+    expect(await run(["eval", "--grid", grid], io)).toBe(2);
+    expect(io.stderr.join("\n")).toContain("cannot send your API key elsewhere");
+  });
+});
+
 describe("table rendering", () => {
   it("aligns columns and ignores ANSI codes when measuring", () => {
     const table = renderTable(

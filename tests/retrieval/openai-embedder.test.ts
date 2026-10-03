@@ -40,7 +40,7 @@ describe("OpenAICompatibleEmbedder", () => {
 
   it("sends dimensions when configured", async () => {
     const { fetch, calls } = mockFetch((body) => ok(body.input));
-    await new OpenAICompatibleEmbedder({ baseUrl: "http://x.test", model: "m", dimensions: 256, fetch }).embed(["a"]);
+    await new OpenAICompatibleEmbedder({ baseUrl: "https://x.test", model: "m", dimensions: 256, fetch }).embed(["a"]);
     expect(JSON.parse(String(calls[0]![1].body)).dimensions).toBe(256);
   });
 
@@ -57,14 +57,14 @@ describe("OpenAICompatibleEmbedder", () => {
   it("reads the key from the environment when not given", async () => {
     vi.stubEnv("RLAB_EMBEDDINGS_API_KEY", "from-env");
     const { fetch, calls } = mockFetch((body) => ok(body.input));
-    await new OpenAICompatibleEmbedder({ baseUrl: "http://x.test", model: "m", fetch }).embed(["a"]);
+    await new OpenAICompatibleEmbedder({ baseUrl: "https://x.test", model: "m", fetch }).embed(["a"]);
     expect((calls[0]![1].headers as Record<string, string>).Authorization).toBe("Bearer from-env");
   });
 
   it("never exposes the key through serialization or the id", () => {
     const { fetch } = mockFetch((body) => ok(body.input));
     const embedder = new OpenAICompatibleEmbedder({
-      baseUrl: "http://x.test",
+      baseUrl: "https://x.test",
       model: "m",
       apiKey: "secret-key",
       fetch,
@@ -75,7 +75,7 @@ describe("OpenAICompatibleEmbedder", () => {
 
   it("batches requests and keeps input order", async () => {
     const { fetch, calls } = mockFetch((body) => ok(body.input, true));
-    const embedder = new OpenAICompatibleEmbedder({ baseUrl: "http://x.test", model: "m", batchSize: 2, fetch });
+    const embedder = new OpenAICompatibleEmbedder({ baseUrl: "https://x.test", model: "m", batchSize: 2, fetch });
     const vectors = await embedder.embed(["a", "bbb", "cc"]);
     expect(calls).toHaveLength(2);
     // [len, 1, 0] normalized: the first component orders the inputs by length 1, 3, 2.
@@ -85,14 +85,14 @@ describe("OpenAICompatibleEmbedder", () => {
 
   it("normalizes returned vectors", async () => {
     const { fetch } = mockFetch((body) => ok(body.input));
-    const [v] = await new OpenAICompatibleEmbedder({ baseUrl: "http://x.test", model: "m", fetch }).embed(["abc"]);
+    const [v] = await new OpenAICompatibleEmbedder({ baseUrl: "https://x.test", model: "m", fetch }).embed(["abc"]);
     expect(Math.hypot(...v!)).toBeCloseTo(1, 5);
   });
 
   it("turns HTTP errors into EmbeddingRequestError without leaking the key", async () => {
     const { fetch } = mockFetch(() => new Response("invalid api key", { status: 401 }));
     const embedder = new OpenAICompatibleEmbedder({
-      baseUrl: "http://x.test",
+      baseUrl: "https://x.test",
       model: "m",
       apiKey: "secret-key",
       fetch,
@@ -107,11 +107,11 @@ describe("OpenAICompatibleEmbedder", () => {
   it("rejects malformed and short responses", async () => {
     const bad = mockFetch(() => new Response(JSON.stringify({ nope: true }), { status: 200 }));
     await expect(
-      new OpenAICompatibleEmbedder({ baseUrl: "http://x.test", model: "m", fetch: bad.fetch }).embed(["a"]),
+      new OpenAICompatibleEmbedder({ baseUrl: "https://x.test", model: "m", fetch: bad.fetch }).embed(["a"]),
     ).rejects.toThrow(/expected shape/);
     const short = mockFetch(() => new Response(JSON.stringify({ data: [] }), { status: 200 }));
     await expect(
-      new OpenAICompatibleEmbedder({ baseUrl: "http://x.test", model: "m", fetch: short.fetch }).embed(["a"]),
+      new OpenAICompatibleEmbedder({ baseUrl: "https://x.test", model: "m", fetch: short.fetch }).embed(["a"]),
     ).rejects.toThrow(/Expected 1 embeddings/);
   });
 
@@ -120,13 +120,13 @@ describe("OpenAICompatibleEmbedder", () => {
       throw new TypeError("connection refused");
     }) as unknown as typeof fetch;
     await expect(
-      new OpenAICompatibleEmbedder({ baseUrl: "http://x.test", model: "m", fetch: failing }).embed(["a"]),
+      new OpenAICompatibleEmbedder({ baseUrl: "https://x.test", model: "m", fetch: failing }).embed(["a"]),
     ).rejects.toThrow(/connection refused/);
   });
 
   it("validates batch size", () => {
     expect(
-      () => new OpenAICompatibleEmbedder({ baseUrl: "http://x.test", model: "m", batchSize: 0, fetch: vi.fn() }),
+      () => new OpenAICompatibleEmbedder({ baseUrl: "https://x.test", model: "m", batchSize: 0, fetch: vi.fn() }),
     ).toThrow(RangeError);
   });
 });

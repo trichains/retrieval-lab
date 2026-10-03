@@ -38,6 +38,40 @@ export class EmbeddingRequestError extends Error {
   }
 }
 
+/** Thrown when a base URL is not acceptable for sending an API key to. */
+export class EmbeddingUrlError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "EmbeddingUrlError";
+  }
+}
+
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/**
+ * Validates the base URL of a network embedder before any request (and before any key is attached):
+ * it must parse, carry no user:password, and use https unless the host is localhost, 127.0.0.1 or
+ * [::1]. Returns the normalized URL without a trailing slash.
+ */
+export function checkEmbeddingBaseUrl(raw: string): string {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new EmbeddingUrlError(`Invalid embedding base URL: "${raw}"`);
+  }
+  if (url.username || url.password) {
+    throw new EmbeddingUrlError("Embedding base URL must not contain credentials; use the API key variable instead");
+  }
+  const local = LOCAL_HOSTS.has(url.hostname);
+  if (url.protocol === "https:" || (url.protocol === "http:" && local)) {
+    return `${url.origin}${url.pathname}`.replace(/\/+$/, "");
+  }
+  throw new EmbeddingUrlError(
+    `Refusing embedding base URL "${url.origin}": use https (plain http is only allowed for localhost, 127.0.0.1 or [::1])`,
+  );
+}
+
 /**
  * Calls `POST {baseUrl}/embeddings` on any OpenAI-compatible server (OpenAI, Azure-style proxies,
  * Ollama, LM Studio, vLLM...). Never used by default: the lab runs fully offline with
@@ -54,7 +88,7 @@ export class OpenAICompatibleEmbedder implements Embedder {
   readonly #apiKey: string | undefined;
 
   constructor(options: OpenAICompatibleEmbedderOptions) {
-    this.baseUrl = options.baseUrl.replace(/\/+$/, "");
+    this.baseUrl = checkEmbeddingBaseUrl(options.baseUrl);
     this.model = options.model;
     this.dimensions = options.dimensions;
     this.batchSize = options.batchSize ?? 64;

@@ -47,9 +47,13 @@ export const EmbedderConfigSchema = z.discriminatedUnion("type", [
     /** Weight of each character trigram feature relative to unigrams. */
     charWeight: z.number().min(0).max(10).default(0.35),
   }),
-  z.object({
+  /**
+   * A network embedder. The base URL is deliberately NOT part of the config: it only comes from the
+   * CLI `--embed-url` flag or the `RLAB_EMBEDDINGS_BASE_URL` variable, so a grid file someone sends
+   * you can never redirect your API key to another host. Unknown keys (such as `baseUrl`) are rejected.
+   */
+  z.strictObject({
     type: z.literal("openai"),
-    baseUrl: z.url(),
     model: z.string().min(1),
     dimensions: z.number().int().positive().optional(),
     batchSize: z.number().int().min(1).max(2048).default(64),
@@ -106,39 +110,57 @@ export const AnalyzerConfigSchema = z.object({
 export const AggregationSchema = z.enum(["max", "sum", "mean"]);
 export type Aggregation = z.infer<typeof AggregationSchema>;
 
-export const PipelineConfigSchema = z.object({
-  chunker: ChunkerConfigSchema,
-  retriever: RetrieverConfigSchema,
-  reranker: RerankerConfigSchema.default({ type: "none" }),
-  analyzer: AnalyzerConfigSchema.default({ stem: "auto", stopwords: true }),
-  /** How chunk scores become a document score (documents are what queries are judged against). */
-  aggregation: AggregationSchema.default("max"),
-  /** Prepend the document title and heading path to each chunk before indexing it. */
-  contextHeaders: z.boolean().default(false),
-});
+/**
+ * Rerankers replace scores with rank-derived ones, so summing or averaging them per document would
+ * rank documents by how many chunks they have. Policy: a reranker only combines with `max`.
+ */
+export const RERANK_AGGREGATION_MESSAGE =
+  'a reranker can only be combined with aggregation "max" (sum/mean over rank-derived scores would count chunks)';
+
+export function rerankerAggregationOk(c: { reranker: { type: string }; aggregation: string }): boolean {
+  return c.reranker.type === "none" || c.aggregation === "max";
+}
+
+export const PipelineConfigSchema = z
+  .object({
+    chunker: ChunkerConfigSchema,
+    retriever: RetrieverConfigSchema,
+    reranker: RerankerConfigSchema.default({ type: "none" }),
+    analyzer: AnalyzerConfigSchema.default({ stem: "auto", stopwords: true }),
+    /** How chunk scores become a document score (documents are what queries are judged against). */
+    aggregation: AggregationSchema.default("max"),
+    /** Prepend the document title and heading path to each chunk before indexing it. */
+    contextHeaders: z.boolean().default(false),
+  })
+  .refine(rerankerAggregationOk, { message: RERANK_AGGREGATION_MESSAGE, path: ["aggregation"] });
 export type PipelineConfig = z.infer<typeof PipelineConfigSchema>;
 export type PipelineConfigInput = z.input<typeof PipelineConfigSchema>;
 
-export const GridSchema = z.object({
-  name: z.string().optional(),
-  chunkers: z.array(ChunkerConfigSchema).min(1),
-  retrievers: z.array(RetrieverConfigSchema).min(1),
-  rerankers: z
-    .array(RerankerConfigSchema)
-    .min(1)
-    .default([{ type: "none" }]),
-  contextHeaders: z.array(z.boolean()).min(1).default([false]),
-  analyzer: AnalyzerConfigSchema.default({ stem: "auto", stopwords: true }),
-  aggregation: AggregationSchema.default("max"),
-  /** Rank cutoffs for recall, precision, hit rate and nDCG. MRR and MAP use the largest one. */
-  cutoffs: z.array(z.number().int().min(1).max(1000)).min(1).default([5, 10]),
-  bootstrap: z
-    .object({
-      samples: z.number().int().min(100).max(100_000).default(2000),
-      seed: z.number().int().default(42),
-    })
-    .default({ samples: 2000, seed: 42 }),
-});
+export const GridSchema = z
+  .object({
+    name: z.string().optional(),
+    chunkers: z.array(ChunkerConfigSchema).min(1),
+    retrievers: z.array(RetrieverConfigSchema).min(1),
+    rerankers: z
+      .array(RerankerConfigSchema)
+      .min(1)
+      .default([{ type: "none" }]),
+    contextHeaders: z.array(z.boolean()).min(1).default([false]),
+    analyzer: AnalyzerConfigSchema.default({ stem: "auto", stopwords: true }),
+    aggregation: AggregationSchema.default("max"),
+    /** Rank cutoffs for recall, precision, hit rate and nDCG. MRR and MAP use the largest one. */
+    cutoffs: z.array(z.number().int().min(1).max(1000)).min(1).default([5, 10]),
+    bootstrap: z
+      .object({
+        samples: z.number().int().min(100).max(100_000).default(2000),
+        seed: z.number().int().default(42),
+      })
+      .default({ samples: 2000, seed: 42 }),
+  })
+  .refine((g) => g.aggregation === "max" || g.rerankers.every((r) => r.type === "none"), {
+    message: RERANK_AGGREGATION_MESSAGE,
+    path: ["aggregation"],
+  });
 export type Grid = z.infer<typeof GridSchema>;
 export type GridInput = z.input<typeof GridSchema>;
 
