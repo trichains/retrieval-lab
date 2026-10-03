@@ -164,8 +164,12 @@ uma métrica.
 - **Medir documentos, não chunks.** As consultas são julgadas por documento, e as pontuações dos chunks
   são agregadas por documento (`max` por padrão; `sum` e `mean` disponíveis) antes de calcular as
   métricas. É isso que torna um chunker de 500 caracteres comparável com a recuperação do documento
-  inteiro. A recuperação vai mais fundo que `k` (`max(5k, 50)` chunks) antes de agregar, para que um
-  documento não suma porque os próprios chunks se empurraram para fora da lista.
+  inteiro. A profundidade em chunks começa em `max(5k, 50)` e dobra até haver pelo menos `k`
+  documentos distintos (ou o índice acabar), para que chunks muito pequenos não empurrem documentos
+  para fora do top `k` e puxem o recall para baixo.
+- **Reranker só combina com agregação `max`.** Depois do reranking, as pontuações dos chunks passam a
+  vir da posição; somar ou tirar a média por documento ranquearia os documentos pela quantidade de
+  chunks. Essa combinação é recusada com um erro claro (CLI, arquivos de grade e interface).
 - **Intervalo de confiança e teste pareado por padrão.** Com 60 consultas, a maior parte das diferenças
   entre configurações razoáveis é ruído. Mostrar um IC por bootstrap (com semente fixa) ao lado de cada
   média, e testar pares sobre as diferenças por consulta, impede a ferramenta de vender demais os
@@ -207,9 +211,13 @@ npm run rlab -- search "rotate api key" --retriever vector --embedder openai \
   --embed-url https://api.openai.com/v1 --embed-model text-embedding-3-small
 ```
 
-Num arquivo de grade, use `{ "type": "vector", "embedder": { "type": "openai", "baseUrl": "...", "model": "..." } }`.
-A chave só vai no cabeçalho `Authorization`; nunca é gravada em configuração, resultados ou mensagens
-de erro. Esse caminho é coberto por testes unitários com `fetch` simulado; ele não foi rodado contra uma
+Num arquivo de grade, use `{ "type": "vector", "embedder": { "type": "openai", "model": "..." } }` e
+passe a URL com `--embed-url` ou `RLAB_EMBEDDINGS_BASE_URL`. **Arquivos de grade não podem definir a
+URL base** (a CLI recusa com código de saída 2), então uma grade que alguém te mande não consegue
+desviar sua chave de API. A URL precisa ser `https`, com exceção de `http` em `localhost`,
+`127.0.0.1` ou `[::1]`, e não pode trazer credenciais embutidas; qualquer outra é recusada antes de
+qualquer requisição. A chave só vai no cabeçalho `Authorization`; nunca é gravada em configuração,
+resultados ou mensagens de erro. Esse caminho é coberto por testes unitários com `fetch` simulado; ele não foi rodado contra uma
 API real para este README.
 
 ## Benchmark
@@ -232,8 +240,8 @@ dele.
 
 - TypeScript `strict` com `noUncheckedIndexedAccess`; nenhum `any`; ESLint e Prettier limpos, com zero
   avisos.
-- 321 testes no Vitest, em 17 arquivos: testes unitários por módulo, testes golden (BM25 e nDCG contra valores calculados à mão nos comentários) e testes por propriedade com `fast-check` (invariante de offsets para todo chunker, limites das métricas, propriedades do RRF, determinismo do embedder de hashing e do bootstrap com semente, ida e volta do estado na URL).
-- Testes de fumaça com Playwright cobrem as três telas, a troca de idioma, o estado na URL, o corpus
+- 346 testes no Vitest, em 18 arquivos: testes unitários por módulo, testes golden (BM25 e nDCG contra valores calculados à mão nos comentários) e testes por propriedade com `fast-check` (invariante de offsets para todo chunker, limites das métricas, propriedades do RRF, determinismo do embedder de hashing e do bootstrap com semente, ida e volta do estado na URL).
+- Testes de fumaça com Playwright cobrem as três telas, a troca de idioma, o estado na URL, a navegação por teclado no mapa de calor, o corpus
   próprio e a ausência de rolagem horizontal em 375 px.
 - CI (GitHub Actions): lint, typecheck, testes unitários e build, depois o job de e2e.
 

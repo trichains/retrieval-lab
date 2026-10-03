@@ -33,13 +33,16 @@ flowchart LR
    `contextHeaders`, the document title and heading path are prepended to the indexed text (not to
    `chunk.text`, which stays an exact slice).
 3. **Retrieval.** `Bm25Index` (inverted index, Lucene IDF) and/or `VectorIndex` (flat, exact cosine)
-   return a ranked list of chunk ids, deeper than the final `k` (`max(5k, 50)` by default; hybrid
-   candidates use `depth`, 100 by default).
+   return a ranked list of chunk ids, deeper than the final `k`: the depth starts at `max(5k, 50)`
+   (hybrid candidates use at least `depth`, 100 by default) and doubles until the list holds `k`
+   distinct documents or the index is exhausted. Each document's language is resolved once (its
+   `lang`, or detected from its whole text) and used for all its chunks.
 4. **Fusion.** For hybrid retrieval, the two lists are merged with Reciprocal Rank Fusion or with
    weighted min-max fusion. Every hit keeps its rank in each input list, which is what the
    Playground's score breakdown shows.
 5. **Reranking (optional).** MMR or the lexical heuristic reorders the top `depth` candidates. Final
-   scores then become rank-derived so that document aggregation follows the new order.
+   scores then become rank-derived so that document aggregation follows the new order; for that
+   reason a reranker is only accepted with `max` aggregation.
 6. **Aggregation.** Chunk hits become document hits (`max` by default, or `sum` / `mean`), because
    relevance is judged per document and that is the only level where different chunkers compare.
 

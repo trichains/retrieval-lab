@@ -157,9 +157,12 @@ including how to add a chunker, a retriever or a metric.
 
 - **Measure documents, not chunks.** Queries are judged per document, and chunk scores are aggregated
   to documents (`max` by default, `sum` and `mean` available) before scoring. That is what makes a
-  500-character chunker comparable with whole-document retrieval. Retrieval goes deeper than `k`
-  (`max(5k, 50)` chunks) before aggregation so a document is not lost because its chunks crowded each
-  other out.
+  500-character chunker comparable with whole-document retrieval. The chunk depth starts at
+  `max(5k, 50)` and doubles until at least `k` distinct documents are retrieved (or the index is
+  exhausted), so tiny chunks cannot crowd documents out of the top `k` and bias recall down.
+- **Rerankers only combine with `max` aggregation.** After reranking, chunk scores are rank-derived;
+  summing or averaging them per document would rank documents by how many chunks they have. That
+  combination is rejected with a clear error (CLI, grid files and the UI).
 - **Confidence intervals and paired tests by default.** With 60 queries, most differences between
   reasonable configurations are noise. Showing a seeded bootstrap CI next to every mean, and testing
   pairs on per-query deltas, keeps the tool from overselling its own results.
@@ -198,9 +201,12 @@ npm run rlab -- search "rotate api key" --retriever vector --embedder openai \
   --embed-url https://api.openai.com/v1 --embed-model text-embedding-3-small
 ```
 
-In a grid file, use `{ "type": "vector", "embedder": { "type": "openai", "baseUrl": "...", "model": "..." } }`.
-The key is only sent in the `Authorization` header; it is never written to config, results or error
-messages. This path is covered by unit tests with a mocked `fetch`; it was not run against a live API
+In a grid file, use `{ "type": "vector", "embedder": { "type": "openai", "model": "..." } }` and pass
+the URL with `--embed-url` or `RLAB_EMBEDDINGS_BASE_URL`. **Grid files cannot set a base URL** (the
+CLI refuses them with exit code 2), so a grid someone sends you cannot redirect your API key. The URL
+must be `https`, except plain `http` on `localhost`, `127.0.0.1` or `[::1]`, and must not embed
+credentials; anything else is refused before any request. The key is only sent in the
+`Authorization` header; it is never written to config, results or error messages. This path is covered by unit tests with a mocked `fetch`; it was not run against a live API
 for this README.
 
 ## Benchmark
@@ -222,8 +228,8 @@ is why exact search is fine at this size and an ANN index would be the next step
 
 - TypeScript `strict` with `noUncheckedIndexedAccess`; no `any`; ESLint and Prettier clean with zero
   warnings.
-- 321 Vitest tests in 17 files: unit tests per module, golden tests (BM25 and nDCG against hand-computed values written in the test comments), and property-based tests with `fast-check` (the chunk offset invariant for every chunker, metric bounds, RRF properties, determinism of the hashing embedder and of the seeded bootstrap, URL state round-trips).
-- Playwright smoke tests cover the three views, the language switch, URL state, bring-your-own corpus
+- 346 Vitest tests in 18 files: unit tests per module, golden tests (BM25 and nDCG against hand-computed values written in the test comments), and property-based tests with `fast-check` (the chunk offset invariant for every chunker, metric bounds, RRF properties, determinism of the hashing embedder and of the seeded bootstrap, URL state round-trips).
+- Playwright smoke tests cover the three views, the language switch, URL state, keyboard navigation of the heatmap, bring-your-own corpus
   and the absence of horizontal scroll at 375 px.
 - CI (GitHub Actions): lint, typecheck, unit tests and build, then the e2e job.
 
