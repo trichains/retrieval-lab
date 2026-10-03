@@ -1,0 +1,1522 @@
+{
+ "name": "nimbus",
+ "description": "Original bilingual (pt-BR/en) toy corpus about Nimbus, a fictional developer platform, with graded judgments. Not a benchmark.",
+ "documents": [
+  {
+   "id": "alertas-de-uso",
+   "title": "Orçamento e alertas de uso",
+   "text": "Para não levar susto na fatura, defina um orçamento mensal em Billing > Orçamento. A Nimbus envia e-mail aos contatos de cobrança quando o gasto previsto do mês chega a 50%, 80% e 100% desse valor.\n\nNos planos Pro e Business, você pode ligar o limite rígido: ao atingir 100%, novos builds e deploys de preview ficam bloqueados até o próximo ciclo ou até você aumentar o orçamento, mas a produção continua no ar. Esses alertas tratam só de custo; alertas sobre erros e latência das aplicações são configurados na área de observabilidade.\n",
+   "lang": "pt",
+   "tags": [
+    "cobranca",
+    "alertas"
+   ]
+  },
+  {
+   "id": "api-client-retries",
+   "title": "Retries and idempotency keys in API clients",
+   "text": "Network calls fail now and then, and the official Nimbus SDKs retry some failures for you. This page is about requests your code sends to the Nimbus API. For events Nimbus sends to your server, see the webhook retries page instead.\n\nBy default the SDKs retry a request up to 3 times when they get a connection error, a timeout, or one of the statuses 429, 500, 502, 503 and 504. The delay starts at 0.5 seconds and doubles on each attempt, capped at 8 seconds, with full jitter. When the response has a `Retry-After` header, the SDK waits at least that long. You can change the behaviour per client:\n\n```python\nfrom nimbus import Nimbus\n\nclient = Nimbus(max_retries=5, timeout=30)\nclient_without_retries = Nimbus(max_retries=0)\n```\n\nOther 4xx errors, such as `401 invalid_api_key` or `422 validation_failed`, are never retried, because sending the same request again would give the same answer.\n\n## Idempotency keys\n\nRetrying a `GET` is harmless, but retrying a `POST` could create a resource twice if the first attempt actually reached the server. To prevent that, send an `Idempotency-Key` header with a unique value, such as a UUID, on every `POST`:\n\n```\ncurl -X POST https://api.nimbus.dev/v2/projects/prj_42/deployments \\\n  -H \"Authorization: Bearer $NIMBUS_API_KEY\" \\\n  -H \"Idempotency-Key: 6f1c2a0e-3b7d-4c55-9a51-0d2f8e7b1c90\" \\\n  -d '{\"ref\": \"main\"}'\n```\n\nNimbus stores the result of the first request for 24 hours. A repeated request with the same key gets the stored response instead of running again. Reusing a key with a different body returns `422 idempotency_key_reused`, and sending the same key while the first request is still running returns `409 conflict`. The SDKs generate an idempotency key automatically for every `POST` and reuse it across their own retries.\n",
+   "lang": "en",
+   "tags": [
+    "api",
+    "sdk",
+    "reliability"
+   ]
+  },
+  {
+   "id": "api-keys-rotation",
+   "title": "Rotating API keys",
+   "text": "API keys give full access to whatever their scopes allow, so they should be replaced on a schedule and immediately when you suspect a leak. Nimbus lets you rotate a key without downtime: the new key and the old one work side by side for a grace period, which gives you time to update every place that uses it.\n\n## Rotate with the CLI\n\nList the keys of the current project to find the key ID (keys are identified by IDs like `key_8f2a`, never by their secret value):\n\n```\nnimbus keys list\n```\n\nThen rotate it, choosing how long the old key keeps working:\n\n```\nnimbus keys rotate key_8f2a --grace 48h\n```\n\nThe command prints the new secret once. Copy it straight into your secret manager; Nimbus only stores a hash and cannot show it again. The new key keeps the name and the scopes of the old one. If you omit `--grace`, the old key stays valid for 24 hours. The longest grace period allowed is 7 days (`--grace 168h`).\n\nDuring the grace period the old key is shown as `expiring` in `nimbus keys list` and in the console. When the period ends, any request made with it fails with `401 invalid_api_key`.\n\n## Check that nothing still uses the old key\n\nEach key has a `last_used_at` field, visible with `nimbus keys show key_8f2a`. Before the grace period ends, confirm that this timestamp stopped moving. If it is still recent, some service, cron job or CI pipeline is still sending the old key. You can extend the grace period once with `nimbus keys rotate key_8f2a --extend 24h`, as long as the total stays within 7 days.\n\n## When a key has leaked\n\nDo not rotate a leaked key: rotation keeps the old key alive during the grace period. Revoke it instead:\n\n```\nnimbus keys revoke key_8f2a\n```\n\nRevocation takes effect across all regions within 60 seconds. Create a new key afterwards with `nimbus keys create --name backend --scope deploy:write`.\n\n## How often to rotate\n\nWe recommend rotating every 90 days. The console shows a warning next to any key older than that, and Owners receive a monthly email listing keys that have not been rotated. Rotation is a per-key action; there is no bulk rotation, so scripts that rotate many keys should call the command once per key.\n",
+   "lang": "en",
+   "tags": [
+    "auth",
+    "api-keys",
+    "security"
+   ]
+  },
+  {
+   "id": "api-reference-errors",
+   "title": "API error codes reference",
+   "text": "This reference lists every error the Nimbus API v2 can return, grouped by HTTP status, plus the errors the edge network serves to visitors of your applications. Branch on the `code` field in your code, not on the message: messages may be reworded, codes are stable.\n\n## Error format\n\nAll API errors share the same JSON body:\n\n```json\n{\n  \"error\": {\n    \"code\": \"insufficient_scope\",\n    \"message\": \"This operation requires the deploy:write scope.\",\n    \"request_id\": \"req_01J9ZKQ4B7\",\n    \"details\": { \"required_scope\": \"deploy:write\" }\n  }\n}\n```\n\n`request_id` matches the `X-Request-Id` response header. Include it in support tickets. `details` is optional and its shape depends on the code.\n\n## 400 Bad Request\n\n### bad_request\n\nThe body is not valid JSON, or a query parameter has the wrong type. The message points to the first problem found. Check that you send `Content-Type: application/json`.\n\n### invalid_scope\n\nReturned only by the OAuth token endpoint, when the requested scopes are not all allowed for the client.\n\n## 401 Unauthorized\n\n### missing_credentials\n\nNo `Authorization` header was sent. If you are migrating from API v1, note that v2 ignores the old `X-Nimbus-Key` header.\n\n### invalid_api_key\n\nThe key does not exist, was revoked, or its rotation grace period has ended. Keys are checked by prefix as well: a `nmb_test_` key cannot call production resources and gets this same error.\n\n### token_expired\n\nAn OAuth access token is older than one hour. Request a new one from the token endpoint; there is no refresh token.\n\n### invalid_client\n\nOAuth client ID or secret is wrong.\n\n## 402 Payment Required\n\n### payment_required\n\nThe organization is restricted because an invoice is more than 14 days overdue. Reads still work; operations that create deployments, builds or new resources fail until the invoice is paid.\n\n### budget_exceeded\n\nThe organization reached its monthly budget with the hard limit turned on. New builds and preview deployments are blocked until the next billing cycle or until an Owner raises the budget. Production traffic is not affected.\n\n## 403 Forbidden\n\n### insufficient_scope\n\nThe credentials are valid but lack the scope required by the operation. `details.required_scope` names it. Scopes cannot be added to an existing key; create a new key.\n\n### quota_exceeded\n\nCreating the resource would go over a plan allowance, such as the number of projects, custom domains or Blob storage. `details.quota` names the allowance and `details.limit` its value.\n\n### ip_not_allowed\n\nThe organization has an IP allowlist (Enterprise only) and the request came from an address outside it.\n\n## 404 Not Found\n\n### not_found\n\nThe resource does not exist, or it exists in an organization your credentials cannot see. Nimbus does not distinguish the two cases, to avoid revealing which IDs exist.\n\n## 409 Conflict\n\n### conflict\n\nThe request conflicts with the current state of the resource. Common causes: a request with the same `Idempotency-Key` is still being processed, or you tried to start a database failover while the previous one has not finished.\n\n### deployment_in_progress\n\nYou tried to promote, roll back or cancel while another operation on the same project's production environment is running. Wait for it to finish and try again.\n\n## 410 Gone\n\n### api_version_retired\n\nThe request used an API version that has been retired. API v1 returns this code after 2027-03-31, and during the scheduled brownout windows before that date.\n\n## 413 Payload Too Large\n\n### payload_too_large\n\nThe request body is larger than 10 MB. To upload files to Nimbus Blob, use the multipart upload endpoints, which accept parts of up to 100 MB each.\n\n## 422 Unprocessable Entity\n\n### validation_failed\n\nThe JSON is well formed but a field is invalid. `details.fields` lists each field with the reason, for example `{\"name\": \"must match ^[a-z0-9-]{3,40}$\"}`.\n\n### idempotency_key_reused\n\nThe `Idempotency-Key` was already used in the last 24 hours with a different request body. Generate a new key for each distinct operation.\n\n## 429 Too Many Requests\n\n### rate_limited\n\nThe organization's request bucket is empty, or an endpoint-specific limit was hit. The response has a `Retry-After` header with the number of seconds to wait. See the rate limits page for the limits per plan.\n\n## 5xx Server Errors\n\n### internal_error (500)\n\nAn unexpected failure on the Nimbus side. These are safe to retry with backoff, and the official SDKs do so automatically. If it persists, check status.nimbus.dev and contact support with the `request_id`.\n\n### service_unavailable (503)\n\nThe API is in scheduled maintenance or temporarily overloaded. The response includes `Retry-After`. Maintenance windows are announced on the status page 72 hours in advance.\n\n## Edge errors served to your visitors\n\nThese errors are not returned by the Nimbus API. They are served by the edge network to people visiting your application when Nimbus cannot get a valid response from it. They carry an `X-Nimbus-Error` header with the code, which lets you tell them apart from 5xx responses produced by your own code.\n\n### upstream_error (502)\n\nYour application closed the connection, crashed while handling the request, or returned a malformed HTTP response. Look at the application logs around the same timestamp; a crash usually leaves a stack trace.\n\n### no_healthy_instances (503)\n\nThere is no running instance able to receive traffic. This happens when every instance fails its health check, when a deployment fails to boot, or when the project was stopped because of billing. Scaling to zero does not cause this error: a cold start is triggered instead.\n\n### upstream_timeout (504)\n\nYour application did not answer within the request timeout. The default is 60 seconds. You can raise it with `timeout` in `nimbus.toml`, up to 120 seconds on Pro and 300 seconds on Business and Enterprise. Long-running work should go to a background job instead of a request handler.\n\n## Retrying safely\n\nAs a rule of thumb, retry `429`, `500`, `502`, `503` and `504` with exponential backoff, and never retry other 4xx errors without changing the request. For `POST` requests, send an `Idempotency-Key` so a retry cannot create the same resource twice.\n",
+   "lang": "en",
+   "tags": [
+    "api",
+    "errors",
+    "reference"
+   ]
+  },
+  {
+   "id": "cache-de-build",
+   "title": "Cache de build",
+   "text": "A Nimbus guarda, por projeto, um cache com as dependências instaladas durante o build. A chave do cache combina o hash do arquivo de lock (package-lock.json, poetry.lock, go.sum e similares) com a versão da imagem de build, então ele é invalidado sozinho quando as dependências mudam.\n\nCaches sem uso por 7 dias são apagados, e cada projeto pode ter até 2 GB de cache (10 GB no Business). Se um build está falhando de um jeito estranho, rode um deploy ignorando o cache com `nimbus deploy --no-cache`, ou limpe tudo com `nimbus cache purge`.\n",
+   "lang": "pt",
+   "tags": [
+    "deploy",
+    "build"
+   ]
+  },
+  {
+   "id": "canais-de-suporte",
+   "title": "Canais de suporte",
+   "text": "Os canais de suporte dependem do plano. No Hobby, o atendimento é feito pelo fórum da comunidade. No Pro, você abre chamado pelo console ou pelo e-mail suporte@nimbus.dev, com primeira resposta em até 24 horas úteis. No Business, a primeira resposta sai em até 8 horas úteis, e chamados marcados como urgentes têm plantão 24 horas por dia. No Enterprise, há um canal dedicado no Slack e resposta em até 1 hora para incidentes SEV1, a qualquer hora.\n\nO atendimento em português funciona em dias úteis, das 9h às 18h no horário de Brasília. Fora desse horário, os chamados são atendidos em inglês.\n",
+   "lang": "pt",
+   "tags": [
+    "suporte"
+   ]
+  },
+  {
+   "id": "changelog-2026",
+   "title": "Changelog 2026",
+   "text": "- **2026-09-22** Canary deployments can now auto-promote: pass `--canary-duration` and Nimbus promotes the new version if the error rate stays under the threshold for that period.\n- **2026-08-05** New region: `nrt1` (Tokyo).\n- **2026-06-10** Brazilian accounts billed in BRL can now pay with Pix.\n- **2026-04-01** API v1 is deprecated. v1 responses now carry `Deprecation` and `Sunset` headers. v1 will be retired on 2027-03-31.\n- **2026-01-15** API v2 is generally available, together with SDK v4 for Node.js, Python and Go.\n",
+   "lang": "en",
+   "tags": [
+    "changelog",
+    "api"
+   ]
+  },
+  {
+   "id": "cotas-e-armazenamento",
+   "title": "Cotas e armazenamento",
+   "text": "Cotas são os limites de quantidade de recursos que cada plano inclui, como número de projetos ou espaço de armazenamento. Elas não têm relação com a velocidade das chamadas à API, que é controlada pelos limites de requisição.\n\n| Recurso                       | Hobby              | Pro                | Business           |\n| ----------------------------- | ------------------ | ------------------ | ------------------ |\n| Projetos por organização      | 3                  | 50                 | 500                |\n| Domínios próprios por projeto | 1                  | 50                 | 200                |\n| Armazenamento no Nimbus Blob  | 1 GB               | 50 GB              | 250 GB             |\n| Membros da equipe             | 1                  | Ilimitado          | Ilimitado          |\n| Variáveis de ambiente         | 64 KB por ambiente | 64 KB por ambiente | 64 KB por ambiente |\n\n## Nimbus Blob\n\nO Nimbus Blob é o armazenamento de objetos da plataforma, usado para arquivos enviados pelos usuários, imagens e backups da aplicação. Cada objeto pode ter até 5 GB. Uploads maiores que 100 MB devem usar upload em partes (`multipart`). No Pro e no Business, o espaço acima do incluído no plano é cobrado por uso, a US$ 0,02 por GB por mês. No Hobby não há cobrança extra: ao atingir 1 GB, novos uploads são recusados.\n\n## Quando uma cota estoura\n\nAo tentar criar um recurso além da cota, a API responde `403` com o código `quota_exceeded` e a mensagem indica qual cota foi atingida. Os recursos existentes continuam funcionando normalmente. Você pode liberar espaço apagando o que não usa, mudar de plano ou, no Business e no Enterprise, pedir ao suporte um aumento de cota específico, como mais domínios para um projeto de white label.\n\nO uso atual de cada cota aparece em Console > Configurações > Uso, junto com a porcentagem consumida.\n",
+   "lang": "pt",
+   "tags": [
+    "cotas",
+    "armazenamento",
+    "planos"
+   ]
+  },
+  {
+   "id": "data-retention-gdpr",
+   "title": "Data retention and GDPR",
+   "text": "This page lists how long Nimbus keeps each kind of data and how we handle requests under the GDPR.\n\n## Retention periods\n\n| Data                            | Kept for                                                                    |\n| ------------------------------- | --------------------------------------------------------------------------- |\n| Application logs                | 1 day (Hobby), 7 days (Pro), 30 days (Business), up to 90 days (Enterprise) |\n| Metrics                         | 7 days (Hobby), 30 days (Pro), 90 days (Business and Enterprise)            |\n| Webhook delivery logs           | 30 days                                                                     |\n| Audit log                       | 90 days (Pro), 1 year (Business and Enterprise)                             |\n| Postgres point-in-time recovery | 7 days (Pro), 30 days (Business)                                            |\n| Invoices and tax records        | As long as tax law requires                                                 |\n\nWhen an Owner deletes an organization, its projects stop at once and its data is deleted within 30 days. Copies in backups are purged within 90 days. Invoices are kept because the law requires it.\n\n## Exporting your data\n\nOwners can request an export in Console > Settings > Privacy > Export data, or with `nimbus export --org acme`. The export is a ZIP file with JSON documents for projects, deployments metadata, members, environment variable names (never values) and invoices. It is ready within 48 hours, and the download link is valid for 7 days.\n\n## GDPR\n\nFor data your applications store on Nimbus, you are the controller and Nimbus is the processor. Our Data Processing Agreement, which includes the Standard Contractual Clauses, is available in Console > Settings > Legal and can be signed online. If you want compute and databases to stay in the European Union, deploy to the `fra1` region.\n\nRequests from data subjects about account data held by Nimbus (access, rectification, erasure, portability) are answered within 30 days. Send them to privacy@nimbus.dev. The list of subprocessors is published on our website, and customers who signed the DPA are notified 30 days before a new subprocessor is added.\n",
+   "lang": "en",
+   "tags": [
+    "privacy",
+    "gdpr",
+    "retention"
+   ]
+  },
+  {
+   "id": "deploy-reverter-versao",
+   "title": "Voltar para a versão anterior",
+   "text": "Se a última publicação em produção quebrou alguma coisa, volte para a versão anterior com um único comando:\n\n```\nnimbus rollback\n```\n\nSem argumentos, o comando faz o domínio de produção apontar de novo para o deploy anterior que estava com status `ready`. Para escolher uma versão específica, passe o ID dela, por exemplo `nimbus rollback dep_7hk2m`. A troca é imediata porque não existe novo build: a Nimbus reaproveita os artefatos que já estavam guardados.\n\nAtenção: o banco de dados não volta junto. Migrações que a versão nova aplicou continuam aplicadas.\n",
+   "lang": "pt",
+   "tags": [
+    "deploy",
+    "cli"
+   ]
+  },
+  {
+   "id": "deploy-rollbacks",
+   "title": "Rolling back a deployment",
+   "text": "A rollback points your production domains back to an earlier deployment. It does not rebuild anything: Nimbus keeps the build artifacts of recent deployments, so switching back takes a few seconds.\n\n## From the CLI\n\n```\nnimbus rollback                # previous ready production deployment\nnimbus rollback dep_7hk2m      # a specific deployment\nnimbus deployments list --env production\n```\n\nUse `nimbus deployments list` to find the ID you want. Only deployments with status `ready` can be targets.\n\n## From the console\n\nOpen the project, go to Deployments, pick a previous production deployment and choose \"Promote to production\". This does the same thing as the CLI command and is recorded in the audit log with your name.\n\n## How far back you can go\n\nNimbus keeps the artifacts of the last 5 production deployments on Hobby, the last 20 on Pro and the last 100 on Business and Enterprise. Older deployments still appear in the list, but they can only be restored by redeploying their commit, which runs a full build.\n\n## Things a rollback does not undo\n\n- **Environment variables.** A rollback uses the snapshot of environment variables that was taken when the target deployment was built. If you changed a secret after that deployment, for example a rotated database password, the rolled-back version will start with the old value. Check the variables before rolling back to an old deployment.\n- **Database migrations.** Schema changes applied by the newer version stay in place. Write migrations that older code can tolerate, or prepare a down migration.\n- **Webhooks and cron schedules** defined in `nimbus.toml` follow the target deployment's configuration.\n\nAfter a rollback, automatic deploys from your Git branch are paused for that project, so the next push does not undo the rollback by accident. Resume them with `nimbus deploy --resume-auto` once the fix is merged. A canary that fails its health checks is rolled back automatically; this page covers manual rollbacks.\n",
+   "lang": "en",
+   "tags": [
+    "deployments",
+    "cli"
+   ]
+  },
+  {
+   "id": "deployments-guide",
+   "title": "Deployments guide",
+   "text": "This guide explains how code becomes a running deployment on Nimbus: project configuration, environments, the deployment lifecycle, release strategies, build cache, environment variables and continuous integration.\n\n## Project configuration\n\nEach project has a `nimbus.toml` file at the repository root. A minimal one looks like this:\n\n```toml\nname = \"api\"\nregions = [\"gru1\"]\n\n[build]\ncommand = \"npm run build\"\noutput = \"dist\"\n\n[http]\nport = 8080\nhealth_check = \"/healthz\"\n```\n\n`health_check` is the path Nimbus calls to decide if an instance is ready to receive traffic. It must answer 200 within 2 seconds. If you omit it, Nimbus only checks that the port accepts connections.\n\n## Your first deployment\n\n```\nnimbus login\nnimbus link        # connects the current directory to a project\nnimbus deploy      # creates a preview deployment\nnimbus deploy --prod\n```\n\n`nimbus deploy` without flags always creates a preview deployment, never a production one. Production requires `--prod`, so a mistyped command cannot replace your live site.\n\n## Environments\n\nEvery project has three kinds of environments:\n\n- **Production**: served at `<project>.nimbus.app` and at your custom domains. There is one production deployment live at a time.\n- **Staging**: an optional long-lived environment for final checks, available on Pro and above, served at `<project>--staging.nimbus.app`. Deploy to it with `nimbus deploy --env staging`.\n- **Preview**: one per Git branch, created automatically on every push, served at `<branch>--<project>.nimbus.app`. Preview deployments of deleted branches are removed after 7 days.\n\nEach environment has its own set of environment variables, so preview deployments never see production secrets unless you copy them on purpose.\n\n## Deployment lifecycle\n\nA deployment moves through these statuses: `queued`, `building`, `ready`, and finally either stays `ready` or ends as `failed` or `canceled`. A build that runs for more than 45 minutes is stopped and marked `failed`. Each project can create up to 30 deployments per hour; beyond that, the API returns `429 rate_limited`.\n\nBuild minutes are counted from the start of `building` to the end of the build, and are billed against your plan's monthly allowance. Waiting in `queued` is not counted.\n\n## Release strategies\n\nHow a new production deployment receives traffic depends on the strategy. Set it per deploy with `--strategy`, or as a default in `nimbus.toml`.\n\n### Rolling (default)\n\nInstances of the new version start, pass the health check and replace old instances in batches. It needs no extra capacity, but for a short time both versions serve traffic.\n\n### Blue-green\n\n```\nnimbus deploy --prod --strategy blue-green\n```\n\nNimbus starts a complete set of instances for the new version while the old set keeps serving all traffic. When the health check has passed three times in a row on every new instance, traffic switches to the new set in a single step. If that does not happen within 5 minutes, the deployment is marked `failed` and traffic never moves. The old set stays idle for 15 minutes after the switch, so switching back during that window is instant. Blue-green doubles the instance count during the deployment, which is billed normally.\n\n### Canary\n\n```\nnimbus deploy --prod --strategy canary --canary-percent 10\n```\n\nThe new version receives the given percentage of requests (from 1 to 50) and the rest stay on the current version. Watch the metrics, then decide:\n\n```\nnimbus promote dep_8pq3r      # send 100% to the canary\nnimbus canary abort dep_8pq3r # send 100% back to the current version\n```\n\nWith `--canary-duration 30m`, Nimbus promotes the canary automatically if its 5xx rate stays below the threshold (2% by default, configurable with `--canary-max-error-rate`) for the whole period. If the error rate goes over the threshold at any point, the canary is aborted and rolled back automatically. A canary that is neither promoted nor aborted within 24 hours is aborted.\n\n## Build cache\n\nDependencies installed during the build are cached per project, keyed by your lockfile's hash and the build image version. The cache is restored at the beginning of every build in the same project, across all environments. Use `nimbus deploy --no-cache` to build from scratch once, for example when you suspect a corrupted dependency.\n\n## Environment variables and secrets\n\nSet variables per environment with `nimbus env set`. Values marked as secrets are write-only. Every deployment takes a snapshot of the variables at creation time; changing a variable does not affect running deployments until the next deploy. This is also why rolling back restores the variable values of the older deployment.\n\n## Promoting and rolling back\n\nAny `ready` preview deployment can be promoted to production with `nimbus promote <deployment-id>`, which skips the build because the artifacts already exist. To go back to an earlier production deployment, use `nimbus rollback`; the rollbacks page explains its limits.\n\n## Continuous integration\n\nConnecting a Git repository in the console is the simplest option: pushes to the default branch deploy to production and other branches create previews. To deploy from your own CI instead, create a project API key with only the `deploy:write` scope, store it as a CI secret named `NIMBUS_TOKEN` (the CLI reads it from the environment automatically), and run:\n\n```\nnimbus deploy --prod --yes\n```\n\n`--yes` skips interactive confirmations. The command exits with a non-zero status if the deployment fails, so the CI job fails too. Add `--wait=false` if you do not want the job to wait for the build to finish.\n",
+   "lang": "en",
+   "tags": [
+    "deployments",
+    "cli",
+    "environments"
+   ]
+  },
+  {
+   "id": "failed-payments",
+   "title": "Failed payments",
+   "text": "If a card charge fails, Nimbus retries it automatically 3, 5 and 7 days after the first attempt and emails the billing contacts each time. You can update the card or pay with another method at any point from Console > Billing.\n\nIf the invoice is still unpaid 14 days after the first failure, the organization becomes restricted: new deploys are rejected with `402 payment_required`, but production keeps serving traffic. At 30 days the organization is suspended and its projects are stopped. Paying the open invoice lifts either state right away.\n",
+   "lang": "en",
+   "tags": [
+    "billing"
+   ]
+  },
+  {
+   "id": "faq-autenticacao",
+   "title": "Perguntas frequentes sobre autenticação",
+   "text": "Reunimos aqui as dúvidas que mais chegam ao suporte sobre chaves de API, escopos, OAuth e login na Nimbus. Cada resposta é curta; quando o assunto tem página própria, indicamos onde ler mais.\n\n## Chaves de API\n\n### Qual é a diferença entre chave de projeto e chave pessoal?\n\nA chave de projeto pertence ao projeto e continua funcionando mesmo que a pessoa que a criou saia da equipe. É a escolha certa para servidores, pipelines de CI e integrações. A chave pessoal pertence a um usuário, tem no máximo as permissões do papel dessa pessoa e é revogada automaticamente quando ela é removida da organização. Use chaves pessoais para scripts locais e testes.\n\n### Como envio a chave nas requisições?\n\nNo cabeçalho `Authorization`, com o prefixo `Bearer`:\n\n```\ncurl https://api.nimbus.dev/v2/projects \\\n  -H \"Authorization: Bearer $NIMBUS_API_KEY\"\n```\n\nO cabeçalho antigo `X-Nimbus-Key` só funciona na API v1, que está descontinuada.\n\n### Onde vejo a chave depois de criada?\n\nEm lugar nenhum. O valor completo aparece uma única vez, no momento da criação, e a Nimbus guarda apenas um hash. Depois disso, o console mostra só os quatro últimos caracteres e o ID da chave (por exemplo `key_8f2a`). Se você perdeu o valor, crie uma chave nova e revogue a antiga.\n\n### Quantas chaves posso ter?\n\nAté 10 chaves ativas por projeto. Chaves revogadas ou expiradas não entram na conta.\n\n### Para que servem as chaves de teste?\n\nChaves que começam com `nmb_test_` acessam o modo sandbox: os recursos criados com elas não geram cobrança, os deploys ficam em um ambiente isolado e os webhooks só são entregues a endpoints marcados como de teste. Chaves de produção começam com `nmb_live_`. As duas têm o mesmo formato e os mesmos escopos; a única diferença é o ambiente que acessam.\n\n## Escopos\n\n### Quais escopos existem?\n\n- `projects:read` e `projects:write`: ler e alterar projetos.\n- `deploy:write`: criar deploys, promover e fazer rollback.\n- `logs:read` e `metrics:read`: consultar logs e métricas.\n- `webhooks:manage`: criar e editar endpoints de webhook.\n- `billing:read`: ler faturas e uso.\n- `keys:manage`: criar e revogar outras chaves.\n- `team:manage`: convidar e remover membros.\n\nUma chave nova recebe apenas `projects:read`, a menos que você escolha outros escopos na criação.\n\n### Recebi 403 insufficient_scope. O que fazer?\n\nA chave é válida, mas não tem o escopo que a operação exige. A mensagem de erro informa o escopo que faltou, por exemplo `deploy:write`. Não é possível adicionar escopos a uma chave existente: crie outra com os escopos certos. Isso é intencional, para que uma chave vazada nunca ganhe poderes novos sem que alguém perceba.\n\n## Rotação e revogação\n\n### Com que frequência devo trocar as chaves?\n\nA recomendação é a cada 90 dias. O console marca com um aviso amarelo as chaves mais antigas que isso. Troque também sempre que alguém com acesso à chave sair da empresa.\n\n### Como trocar uma chave sem derrubar a aplicação?\n\nPelo console, abra Configurações > Chaves de API, clique nos três pontos ao lado da chave e escolha Rotacionar. Você define um período de carência entre 1 hora e 7 dias. Durante esse período, a chave antiga e a nova funcionam ao mesmo tempo, então dá tempo de atualizar o segredo em todos os serviços e fazer um novo deploy. Quando a carência termina, a chave antiga deixa de funcionar sozinha, sem ação sua. Se preferir o terminal, o comando equivalente é `nimbus keys rotate`.\n\nUma dica: antes do fim da carência, confira no console a coluna \"Último uso\" da chave antiga. Se a data ainda estiver mudando, algum serviço continua usando a chave velha.\n\n### Vazou uma chave, e agora?\n\nRevogue imediatamente em Configurações > Chaves de API > Revogar, ou com `nimbus keys revoke`. Não use a rotação nesse caso, porque ela mantém a chave antiga viva durante a carência. A revogação vale em todas as regiões em até 60 segundos. Depois, confira o log de auditoria para ver o que foi feito com a chave.\n\nA Nimbus também participa de varredura de segredos em repositórios públicos do GitHub. Se uma chave `nmb_live_` for publicada num repositório público, ela é revogada automaticamente e os Owners recebem um e-mail com o link do commit.\n\n## OAuth\n\n### Quando usar OAuth em vez de chave de API?\n\nPara integrações entre servidores que precisam de credenciais que expiram sozinhas e podem ser auditadas por cliente. A Nimbus suporta o fluxo client credentials: você troca `client_id` e `client_secret` por um token de acesso em `https://auth.nimbus.dev/oauth/token`. O token vale por 1 hora e não há refresh token; peça um novo quando estiver perto de expirar. Veja a página sobre OAuth client credentials para exemplos.\n\n### Posso usar OAuth para login de usuários no meu app?\n\nNão. A Nimbus não é provedor de identidade para as suas aplicações. O OAuth da Nimbus serve apenas para acessar a API da própria Nimbus.\n\n## Login e SSO\n\n### Posso exigir 2FA da equipe?\n\nSim, nos planos Pro e superiores, em Configurações > Segurança. A Nimbus aceita aplicativos autenticadores (TOTP) e chaves de segurança físicas (WebAuthn). SMS não é aceito.\n\n### O SSO está disponível em quais planos?\n\nNo Business e no Enterprise, via SAML 2.0. O provisionamento automático de contas via SCIM existe só no Enterprise. O passo a passo está na página sobre SSO com SAML.\n\n### Perdi o celular com o 2FA. Como recupero o acesso?\n\nUse um dos códigos de recuperação gerados quando você ativou o 2FA; cada código funciona uma vez. Sem os códigos, peça a um Owner da organização para redefinir o seu 2FA. Se você for o único Owner, o suporte faz uma verificação de identidade, que leva até 3 dias úteis.\n\n### Por que fui desconectado do console?\n\nSessões do console expiram após 30 dias sem uso, ou após 12 horas quando o login foi feito via SSO. Trocar a senha encerra todas as outras sessões abertas.\n",
+   "lang": "pt",
+   "tags": [
+    "autenticacao",
+    "chaves-de-api",
+    "faq"
+   ]
+  },
+  {
+   "id": "faq-cobranca",
+   "title": "Perguntas frequentes sobre planos e cobrança",
+   "text": "Esta página responde às dúvidas mais comuns sobre planos, preços, formas de pagamento e impostos. Para assuntos com página própria, como reembolso e nota fiscal, há um resumo aqui e o detalhe na página específica.\n\n## Planos e preços\n\n### Quais planos existem?\n\n| Plano      | Preço em dólar        | Preço em reais        |\n| ---------- | --------------------- | --------------------- |\n| Hobby      | Gratuito              | Gratuito              |\n| Pro        | US$ 20 por membro/mês | R$ 109 por membro/mês |\n| Business   | US$ 60 por membro/mês | R$ 329 por membro/mês |\n| Enterprise | Sob contrato          | Sob contrato          |\n\nO Hobby é pensado para projetos pessoais e permite apenas um membro. O Pro atende equipes pequenas, e o Business acrescenta SSO, SLA de 99,95%, log drains e várias regiões por projeto.\n\n### Todo membro paga?\n\nNão. Os papéis Viewer e Billing não ocupam assento pago. Só pagam Owners, Admins e Developers.\n\n### Existe desconto no plano anual?\n\nSim. No pagamento anual você paga 10 meses e usa 12. O valor é cobrado de uma vez, no início do período.\n\n## Cobrança por uso\n\n### O que está incluído em cada plano?\n\n| Recurso por mês    | Hobby   | Pro       | Business   |\n| ------------------ | ------- | --------- | ---------- |\n| Requisições        | 100 mil | 5 milhões | 25 milhões |\n| Transferência      | 10 GB   | 500 GB    | 2 TB       |\n| Minutos de build   | 100     | 3.000     | 10.000     |\n| Armazenamento Blob | 1 GB    | 50 GB     | 250 GB     |\n\n### Quanto custa o que passar do incluído?\n\nNo Pro e no Business, o excedente é cobrado na fatura do mês seguinte: US$ 0,40 por milhão de requisições, US$ 0,08 por GB de transferência, US$ 0,01 por minuto de build e US$ 0,02 por GB de armazenamento por mês. No Hobby não existe excedente; ao atingir o limite do mês, os projetos param de receber tráfego até o mês seguinte ou até você mudar de plano.\n\n### Como evito surpresas?\n\nConfigure um orçamento mensal com alertas por e-mail e, se quiser, um limite rígido. Veja a página sobre orçamento e alertas de uso.\n\n## Formas de pagamento\n\n### Quais formas de pagamento são aceitas?\n\nCartão de crédito (Visa, Mastercard e American Express) em todas as contas. Contas brasileiras faturadas em reais também podem pagar com Pix ou boleto.\n\n### Quanto tempo o boleto leva para ser compensado?\n\nO boleto vence 5 dias depois de emitido, e a compensação bancária leva até 2 dias úteis após o pagamento. Enquanto isso, a fatura aparece como \"aguardando confirmação\". O Pix é confirmado em poucos minutos.\n\n## Pagamento recusado\n\n### O que acontece se o cartão for recusado?\n\nA Nimbus tenta cobrar de novo 3, 5 e 7 dias depois da primeira tentativa e avisa os contatos de cobrança por e-mail a cada vez. Se a fatura continuar em aberto 14 dias depois da primeira falha, a organização fica restrita: não é possível fazer novos deploys, mas o que já está em produção continua no ar. Com 30 dias, a organização é suspensa e os projetos são parados. Os dados de uma organização suspensa são apagados 30 dias após a suspensão, então não deixe chegar a esse ponto.\n\n### Paguei. Quanto tempo leva para liberar?\n\nCom cartão ou Pix, a restrição sai assim que o pagamento é confirmado. Com boleto, só depois da compensação.\n\n## Mudança de plano\n\n### Como funciona o upgrade?\n\nO upgrade vale na hora. Você paga a diferença proporcional aos dias que faltam no ciclo, e os novos limites passam a valer imediatamente.\n\n### E o downgrade?\n\nTambém vale na hora, mas o valor não usado vira crédito na conta, abatido da próxima fatura; não há devolução em dinheiro. Antes de concluir, o console mostra quais recursos passam da cota do plano novo, como projetos ou domínios a mais, e pede que você os remova.\n\n### Tenho direito a reembolso?\n\nPlanos mensais não são reembolsáveis. Planos anuais podem ser reembolsados integralmente se o pedido for feito em até 14 dias da compra. A política completa está na página de reembolso.\n\n## Impostos e nota fiscal\n\n### O preço em reais já inclui impostos?\n\nSim. Contas faturadas em reais são atendidas pela Nimbus Tecnologia Ltda., empresa brasileira, e o preço já inclui o ISS. Contas faturadas em dólar são atendidas pela Nimbus Inc. e recebem uma invoice comercial sem tributos brasileiros; nesse caso, encargos como o IOF da compra internacional no cartão ficam por conta do cliente.\n\n### Posso trocar uma conta em dólar para reais?\n\nSim, desde que o endereço de cobrança seja no Brasil e você informe CPF ou CNPJ. A troca vale a partir do ciclo seguinte e não pode ser feita com fatura em aberto.\n\n### Minha empresa precisa reter impostos na fonte. Como faço?\n\nInforme as retenções em Billing > Dados fiscais antes do fechamento do mês. A Nimbus emite a nota com os valores retidos destacados, e a fatura passa a cobrar o valor líquido. Mudanças feitas depois da emissão da nota só valem para o mês seguinte.\n\n### Quando recebo a NFS-e?\n\nEm até 3 dias úteis depois da confirmação do pagamento, por e-mail e em Console > Billing > Documentos fiscais. Detalhes sobre CNPJ e cancelamento estão na página sobre nota fiscal.\n\n## Cancelamento\n\n### Como cancelo o plano pago?\n\nEm Billing > Plano > Cancelar assinatura. A organização volta ao Hobby no fim do período já pago. Se ela tiver mais recursos do que o Hobby permite, os projetos excedentes ficam pausados, não apagados, até você reduzir o uso ou contratar de novo. Cancelar o plano não apaga a organização; para isso, um Owner precisa excluí-la em Configurações > Avançado.\n",
+   "lang": "pt",
+   "tags": [
+    "cobranca",
+    "planos",
+    "faq"
+   ]
+  },
+  {
+   "id": "gerenciamento-de-equipe",
+   "title": "Gerenciamento de equipe e papéis",
+   "text": "Cada organização da Nimbus tem membros, e cada membro tem um papel que define o que ele pode fazer.\n\n| Papel     | O que pode fazer                                                 |\n| --------- | ---------------------------------------------------------------- |\n| Owner     | Tudo, inclusive apagar a organização e transferir a titularidade |\n| Admin     | Gerenciar membros (exceto Owners), projetos e configurações      |\n| Developer | Fazer deploy, editar variáveis de ambiente, ver logs e métricas  |\n| Billing   | Ver faturas, alterar forma de pagamento e dados fiscais          |\n| Viewer    | Apenas leitura de projetos, deploys e métricas                   |\n\n## Convidar pessoas\n\nPelo console, em Configurações > Equipe, ou pelo CLI:\n\n```\nnimbus team invite ana@empresa.com --role developer\n```\n\nO convite vale por 7 dias. Se expirar, reenvie com `nimbus team invite ana@empresa.com --resend`. Em organizações com SSO exigido, pessoas do domínio verificado entram pelo provedor de identidade e não precisam de convite.\n\n## Assentos e cobrança\n\nOs planos pagos cobram por membro. Os papéis Viewer e Billing não ocupam assento pago, então é possível dar acesso de leitura a um gestor ou ao financeiro sem aumentar a fatura.\n\n## Remover um membro\n\nAo remover alguém, as chaves pessoais dessa pessoa são revogadas na hora. Chaves de projeto e clientes OAuth continuam valendo, mesmo que tenham sido criados por ela; revise-os se a saída não foi amigável. Deploys feitos pela pessoa permanecem no histórico.\n\n## Transferir a titularidade\n\nSó um Owner pode promover outro membro a Owner. A organização precisa ter sempre pelo menos um Owner, então, para sair, promova outra pessoa antes de rebaixar a si mesmo.\n\n## Exigir 2FA\n\nNos planos Pro e superiores, Owners podem exigir autenticação em dois fatores em Configurações > Segurança. Membros sem 2FA ficam bloqueados até configurar um aplicativo autenticador ou chave de segurança.\n",
+   "lang": "pt",
+   "tags": [
+    "equipes",
+    "conta"
+   ]
+  },
+  {
+   "id": "guia-observabilidade",
+   "title": "Guia de observabilidade com logs, métricas e alertas",
+   "text": "Este guia mostra como acompanhar o que acontece nas suas aplicações na Nimbus: onde ler os logs, quais métricas existem, como criar alertas e como seguir uma requisição de ponta a ponta.\n\n## Logs\n\nTudo o que a aplicação escreve na saída padrão (stdout) e na saída de erro (stderr) vira log, junto com os logs de build e os logs de acesso da rede de borda. Você pode ler os logs no console, na aba Logs do projeto, ou pelo CLI.\n\n### Consultando pelo CLI\n\n```\nnimbus logs --project api --since 2h\nnimbus logs --project api --follow\nnimbus logs --project api --level error --since 30m\nnimbus logs --project api --deployment dep_7hk2m\nnimbus logs --project api --search \"timeout\" --since 1d\n```\n\n`--follow` mantém a conexão aberta e mostra as linhas novas em tempo real; cada projeto aceita até 5 conexões desse tipo ao mesmo tempo. `--level` filtra pelo nível, quando a linha é um JSON com o campo `level`. Escrever logs em JSON, com um objeto por linha, permite filtrar por qualquer campo no console.\n\n### Limites e retenção\n\nCada linha pode ter até 16 KB; o que passar disso é cortado e marcado com `[truncated]`. Os logs ficam guardados por 1 dia no Hobby, 7 dias no Pro, 30 dias no Business e até 90 dias no Enterprise. Para guardar por mais tempo ou analisar em outra ferramenta, use um log drain, disponível a partir do Business.\n\n### Logs de build\n\nOs logs de build ficam no próprio deploy, em Deployments > (deploy) > Build, e seguem a mesma retenção. Se um build falha antes de começar a rodar o seu comando, procure por mensagens da etapa `restore-cache` ou `install`: a maioria dos problemas nessa fase vem de dependências ou do cache.\n\n## Métricas\n\nA Nimbus coleta métricas de cada projeto automaticamente, sem instalar agente:\n\n| Métrica                                     | O que mede                              |\n| ------------------------------------------- | --------------------------------------- |\n| `requests`                                  | Requisições por minuto, por status HTTP |\n| `latency_p50`, `latency_p95`, `latency_p99` | Tempo de resposta em milissegundos      |\n| `http_5xx_rate`                             | Porcentagem de respostas 5xx            |\n| `cpu`                                       | Uso de CPU por instância                |\n| `memory`                                    | Uso de memória por instância, em MB     |\n| `cold_starts`                               | Instâncias iniciadas do zero por minuto |\n| `instances`                                 | Número de instâncias ativas             |\n\nA resolução é de 1 minuto. As métricas ficam disponíveis por 7 dias no Hobby, 30 dias no Pro e 90 dias no Business e no Enterprise. No console, a aba Métricas permite comparar dois deploys lado a lado, o que ajuda a confirmar se uma versão nova piorou a latência.\n\nPara métricas da sua própria aplicação, como pedidos criados por minuto, escreva uma linha de log em JSON com o campo `metric` e um valor numérico. O console agrega essas linhas como métricas personalizadas, com a mesma retenção dos logs.\n\n## Alertas\n\nAlertas avisam quando uma métrica passa de um limite por um certo tempo. Estão disponíveis a partir do plano Pro; no Hobby só existem os alertas de uso da cobrança.\n\n### Criando uma regra\n\n```\nnimbus alerts create --project api \\\n  --metric http_5xx_rate --above 2 --for 5m \\\n  --channel slack:#ops --channel email:oncall@empresa.com\n```\n\nEssa regra dispara quando a taxa de 5xx fica acima de 2% durante 5 minutos seguidos. Os canais aceitos são e-mail, Slack, PagerDuty e webhook. No canal webhook, a Nimbus envia o evento `alert.triggered`, assinado como qualquer outro webhook. Cada projeto pode ter até 25 regras.\n\n### Disparo e resolução\n\nUma regra disparada só envia nova notificação quando é resolvida, ou seja, quando a métrica volta ao normal pelo mesmo período configurado em `--for`. Isso evita dezenas de mensagens durante um mesmo incidente. Para silenciar uma regra durante uma manutenção planejada, use `nimbus alerts mute <id> --for 2h`.\n\n### Sugestões de regras para começar\n\n- `http_5xx_rate` acima de 2% por 5 minutos.\n- `latency_p95` acima do dobro do valor normal por 10 minutos.\n- `memory` acima de 90% do limite da instância por 10 minutos, que costuma anteceder reinícios por falta de memória.\n- `instances` igual a 0 por 2 minutos em produção.\n\n## Rastreando uma requisição\n\nToda resposta da Nimbus, tanto da API quanto das suas aplicações, traz o cabeçalho `X-Request-Id`, com um valor como `req_01J9ZKQ4`. O mesmo ID aparece nos logs de acesso da borda e é repassado à sua aplicação no cabeçalho de entrada. Registre esse valor nos seus logs: com ele, você encontra todas as linhas de uma requisição com `nimbus logs --search req_01J9ZKQ4`. Inclua também o ID quando abrir um chamado no suporte; ele acelera muito a investigação.\n\n## Enviando dados para outras ferramentas\n\nSe a sua equipe já usa outra plataforma de observabilidade, configure um log drain para enviar os logs em tempo quase real para um endpoint HTTPS, um servidor syslog ou o Datadog. O recurso existe no Business e no Enterprise e só envia linhas geradas depois da criação do drain. As métricas da plataforma podem ser lidas pela API, em `GET /v2/projects/{id}/metrics`, com o escopo `metrics:read`, o que permite montar painéis próprios.\n\n## Boas práticas\n\n- Escreva logs estruturados em JSON, com `level`, `message` e o `X-Request-Id`.\n- Não registre segredos, tokens nem dados pessoais desnecessários; os logs ficam acessíveis a todos os membros com papel Developer ou superior.\n- Crie alertas antes do primeiro incidente, não durante.\n- Revise as regras a cada trimestre: alerta que dispara toda semana sem ação acaba sendo ignorado.\n",
+   "lang": "pt",
+   "tags": [
+    "observabilidade",
+    "logs",
+    "metricas",
+    "alertas"
+   ]
+  },
+  {
+   "id": "invoices",
+   "title": "Invoices",
+   "text": "Nimbus issues one invoice per organization on the 1st of each month (UTC). It covers the seats for the month ahead and the usage of the month that just ended: extra requests, bandwidth, build minutes and storage above what your plan includes. Invoices are numbered like `NMB-2026-004512` and can be downloaded as PDF from Console > Billing > Invoices.\n\nYou can add a tax ID, a purchase order number and up to five billing email addresses. These details only apply to invoices issued after the change. An issued invoice cannot be edited, but you can ask support for a corrected copy within 30 days of the issue date.\n",
+   "lang": "en",
+   "tags": [
+    "billing"
+   ]
+  },
+  {
+   "id": "lgpd-direitos-do-titular",
+   "title": "LGPD e pedidos de titulares",
+   "text": "A Nimbus atua como operadora dos dados pessoais que os clientes guardam nos próprios projetos e como controladora dos dados da conta, como nome, e-mail e dados de cobrança. Pedidos de titulares com base na LGPD (acesso, correção, portabilidade ou eliminação) devem ser enviados ao encarregado pelo e-mail privacidade@nimbus.dev e são respondidos em até 15 dias.\n\nQuando o pedido envolve dados que um cliente armazena nas aplicações dele, a Nimbus encaminha a solicitação ao cliente, que é o controlador nesse caso. Contas brasileiras podem manter os dados na região gru1, em São Paulo; quando há transferência internacional, ela segue cláusulas contratuais padrão.\n",
+   "lang": "pt",
+   "tags": [
+    "privacidade",
+    "lgpd"
+   ]
+  },
+  {
+   "id": "limites-de-requisicao",
+   "title": "Limites de requisição da API",
+   "text": "A API da Nimbus limita o número de chamadas por minuto de cada organização, somando o tráfego de todas as chaves. No plano Hobby são 60 requisições por minuto, no Pro são 600 e no Business, 3.000. No Enterprise, o limite é negociado em contrato.\n\nQuando o limite estoura, a API responde com status 429, código de erro `rate_limited` e o cabeçalho `Retry-After`, que informa quantos segundos esperar antes de tentar de novo. Criar mais chaves não aumenta o limite, justamente porque a contagem é feita por organização e não por chave. Se você precisa de mais capacidade de forma permanente, o caminho é mudar de plano ou conversar com o time comercial.\n",
+   "lang": "pt",
+   "tags": [
+    "api",
+    "limites"
+   ]
+  },
+  {
+   "id": "log-drains",
+   "title": "Log drains",
+   "text": "A log drain forwards your project's logs to an outside system in near real time. Drains are available on the Business and Enterprise plans. Nimbus supports three destinations: an HTTPS endpoint, which receives batches of newline-delimited JSON (up to 1 MB or every 5 seconds, whichever comes first); syslog over TLS; and Datadog.\n\nCreate one with `nimbus drains add https://logs.example.com/ingest --project api`. Drains are not retroactive: only lines produced after the drain is created are sent, so use the built-in log search for anything older.\n",
+   "lang": "en",
+   "tags": [
+    "logs",
+    "observability"
+   ]
+  },
+  {
+   "id": "migration-guide-v1-v2",
+   "title": "Migrating from API v1 to v2",
+   "text": "API v2 became generally available on 2026-01-15. API v1 is deprecated and will be retired on 2027-03-31. This guide lists every breaking change and the order in which we suggest you migrate. Most integrations need a day or two of work; those that consume webhooks need a little more, because the signature scheme changed.\n\n## Timeline\n\n| Date       | What happens                                                                                                      |\n| ---------- | ----------------------------------------------------------------------------------------------------------------- |\n| 2026-01-15 | API v2 and SDK v4 released.                                                                                       |\n| 2026-04-01 | v1 deprecated. Every v1 response carries `Deprecation: true` and `Sunset: Wed, 31 Mar 2027 23:59:59 GMT` headers. |\n| 2027-02-10 | First brownout: v1 returns `410 api_version_retired` for one hour, from 14:00 to 15:00 UTC.                       |\n| 2027-03-03 | Second brownout: four hours, from 12:00 to 16:00 UTC.                                                             |\n| 2027-03-31 | v1 retired. All v1 requests return `410 api_version_retired`.                                                     |\n\nThe brownouts exist to reveal integrations that nobody remembers. If something breaks during a brownout, you have found a v1 caller. To see which of your keys still call v1, open Console > Settings > API usage and filter by version.\n\n## Base URL and versioning\n\nThe version is part of the path. Replace `https://api.nimbus.dev/v1/` with `https://api.nimbus.dev/v2/`. There is no version header and no per-key version pinning; the path alone decides.\n\n## Authentication\n\nv1 accepted the key in the `X-Nimbus-Key` header. v2 accepts only the standard header:\n\n```\nAuthorization: Bearer nmb_live_...\n```\n\nExisting keys keep working, so you do not need to create new ones. OAuth access tokens work only with v2.\n\n## Renamed resources\n\n| v1                  | v2                           |\n| ------------------- | ---------------------------- |\n| `/apps`             | `/projects`                  |\n| `/apps/{id}/builds` | `/projects/{id}/deployments` |\n| `app_id` field      | `project_id`                 |\n| `/hooks`            | `/webhooks/endpoints`        |\n\nIDs did not change. An app with ID `prj_42` in v1 is the project `prj_42` in v2.\n\n## Status values\n\nDeployment statuses were renamed to be more explicit:\n\n| v1        | v2         |\n| --------- | ---------- |\n| `pending` | `queued`   |\n| `running` | `building` |\n| `ok`      | `ready`    |\n| `error`   | `failed`   |\n| `stopped` | `canceled` |\n\nIf you compare status strings anywhere, for example in a CI script that waits for `ok`, update those comparisons.\n\n## Pagination\n\nv1 used page numbers (`?page=3&per_page=50`). v2 uses cursors:\n\n```\nGET /v2/projects/prj_42/deployments?limit=50\nGET /v2/projects/prj_42/deployments?limit=50&starting_after=dep_9xk1\n```\n\nEach list response has a `data` array and a `has_more` boolean. To get the next page, pass the ID of the last item as `starting_after`. The maximum `limit` is 100, and the default is 20. Cursors are stable when new items are created during the iteration, which was a frequent source of duplicates with page numbers.\n\n## Timestamps and amounts\n\nv1 returned timestamps as Unix seconds (`\"created\": 1727990400`). v2 returns ISO 8601 strings in UTC, and the field names end in `_at`:\n\n```json\n{ \"created_at\": \"2024-10-03T21:20:00Z\" }\n```\n\nMoney amounts are integers in the smallest currency unit in v2 (`\"amount\": 2000, \"currency\": \"usd\"` means US$ 20.00). In v1 they were decimal strings (`\"amount\": \"20.00\"`).\n\n## Error format\n\nv1 returned errors as `{\"error\": \"Invalid key\"}`. v2 returns an object with a stable `code`, a `message` and a `request_id`. See the error codes reference for the full list. If your code matched on v1 error messages, switch to matching on `code`.\n\n## Rate limit headers\n\nv1 sent `X-Rate-Limit` and `X-Rate-Limit-Left`. v2 sends `X-RateLimit-Limit`, `X-RateLimit-Remaining` and `X-RateLimit-Reset`, and `Retry-After` on 429 responses. The limits themselves are the same in both versions.\n\n## Webhooks\n\nThis is the change that requires the most care. v1 endpoints received an `X-Nimbus-Signature` header with an HMAC-SHA256 of the body alone, without a timestamp. v2 endpoints receive `Nimbus-Signature: t=...,v1=...`, where the signed payload is the timestamp, a dot and the raw body. The timestamp lets you reject replayed requests.\n\nThe signature version follows the endpoint, not the API you call. To migrate an endpoint:\n\n1. Update your handler to accept both formats: check for `Nimbus-Signature` first and fall back to `X-Nimbus-Signature`.\n2. Deploy the handler.\n3. In the console, open the endpoint and click \"Upgrade to v2 payloads\". From then on, it receives only the new header and the v2 event format.\n4. Remove the fallback.\n\nThe event payload also changed: v2 events wrap the object in `data.object` and include `type`, `id` and `created_at` at the top level. The event names follow the resource renames, so `build.succeeded` became `deployment.ready` and `build.failed` became `deployment.failed`.\n\n## SDKs\n\nSDK v4 targets API v2. SDK v3 targets v1 and stops working at the sunset. In most codebases, the upgrade means bumping the package version and renaming `apps` to `projects` in method calls. The SDKs' changelogs list a few smaller renames.\n\n## Migration checklist\n\n- Find every v1 caller using the API usage page in the console.\n- Change the base URL and the authentication header.\n- Rename resources, fields and status values.\n- Replace page-number pagination with cursors.\n- Parse ISO 8601 timestamps and integer amounts.\n- Match errors on `code`.\n- Migrate each webhook endpoint to v2 signatures, one at a time.\n- Upgrade to SDK v4.\n- Watch the brownout dates and confirm nothing breaks.\n",
+   "lang": "en",
+   "tags": [
+    "api",
+    "migration",
+    "changelog"
+   ]
+  },
+  {
+   "id": "nota-fiscal",
+   "title": "Nota fiscal de serviço (NFS-e)",
+   "text": "Contas brasileiras faturadas em reais recebem nota fiscal de serviço eletrônica (NFS-e), emitida pela Nimbus Tecnologia Ltda., com sede em São Paulo. A nota sai em até 3 dias úteis depois da confirmação do pagamento, chega por e-mail aos contatos de cobrança e também fica disponível em Console > Billing > Documentos fiscais.\n\nPara que a nota saia no nome da empresa, cadastre o CNPJ antes do pagamento: notas já emitidas não são reemitidas com outro documento. O cancelamento só é possível dentro do mês de emissão, mediante pedido ao suporte. Contas pagas em dólar recebem uma invoice comercial da Nimbus Inc., sem tributos brasileiros.\n",
+   "lang": "pt",
+   "tags": [
+    "cobranca",
+    "impostos"
+   ]
+  },
+  {
+   "id": "oauth-client-credentials",
+   "title": "OAuth client credentials",
+   "text": "For server-to-server integrations that should not depend on a person's account, use an OAuth client instead of a personal API key. Nimbus supports the OAuth 2.0 client credentials grant. An Owner or Admin creates the client in Console > Settings > OAuth clients and chooses which scopes it may request. The client secret is shown once, at creation time.\n\nExchange the client ID and secret for an access token:\n\n```\ncurl -X POST https://auth.nimbus.dev/oauth/token \\\n  -u \"$NIMBUS_CLIENT_ID:$NIMBUS_CLIENT_SECRET\" \\\n  -d grant_type=client_credentials \\\n  -d scope=\"projects:read deploy:write\"\n```\n\nThe response looks like this:\n\n```json\n{\n  \"access_token\": \"eyJhbGciOi...\",\n  \"token_type\": \"Bearer\",\n  \"expires_in\": 3600,\n  \"scope\": \"projects:read deploy:write\"\n}\n```\n\nSend the token in the `Authorization: Bearer` header, exactly like an API key. Tokens are valid for one hour and there is no refresh token in this flow: when a token is about to expire, request a new one with the same credentials. A good practice is to cache the token and renew it about five minutes before `expires_in` runs out, instead of asking for a new token on every call. The token endpoint is limited to 20 requests per minute per client, so fetching a token per request will eventually return 429.\n\nThe requested scopes must be a subset of the scopes allowed for the client; asking for anything else returns `400 invalid_scope`. A wrong client ID or secret returns `401 invalid_client`, and calling the API with an expired token returns `401 token_expired`.\n\nEach organization can have up to 20 OAuth clients. To change a client's secret without downtime, generate a second secret in the console: a client can hold two active secrets at once. Move your services to the new secret and then delete the old one.\n",
+   "lang": "en",
+   "tags": [
+    "auth",
+    "oauth"
+   ]
+  },
+  {
+   "id": "rate-limits",
+   "title": "Rate limits",
+   "text": "The Nimbus API uses a token bucket per organization. Every request takes one token; the bucket refills continuously at the per-minute rate of your plan, and its size (the burst) decides how many requests you can send at once after a quiet period. All API keys and OAuth tokens of an organization share the same bucket.\n\n| Plan       | Sustained rate        | Burst    |\n| ---------- | --------------------- | -------- |\n| Hobby      | 60 requests/minute    | 20       |\n| Pro        | 600 requests/minute   | 100      |\n| Business   | 3,000 requests/minute | 500      |\n| Enterprise | Contract              | Contract |\n\n## Response headers\n\nEvery response includes:\n\n- `X-RateLimit-Limit`: the sustained rate per minute for your plan.\n- `X-RateLimit-Remaining`: tokens left in the bucket right now.\n- `X-RateLimit-Reset`: Unix time at which the bucket will be full again.\n\nWhen the bucket is empty, the API answers:\n\n```\nHTTP/1.1 429 Too Many Requests\nRetry-After: 4\n\n{\"error\": {\"code\": \"rate_limited\", \"message\": \"Too many requests\", \"request_id\": \"req_01J9...\"}}\n```\n\n## Handling 429\n\nWait at least the number of seconds in `Retry-After` before sending the next request. If you run many workers, add random jitter so they do not all retry at the same instant. Watching `X-RateLimit-Remaining` lets you slow down before you hit the limit, which is better than reacting to errors.\n\n## Endpoint-specific limits\n\nSome operations have their own limits on top of the organization bucket:\n\n- Creating deployments: 30 per hour per project.\n- `POST /oauth/token`: 20 per minute per OAuth client.\n- Live log streams (`nimbus logs --follow`): 5 concurrent connections per project.\n\nThese limits return the same `429 rate_limited` error. Monthly allowances such as number of projects or storage are not rate limits; exceeding those returns `403 quota_exceeded` instead.\n",
+   "lang": "en",
+   "tags": [
+    "api",
+    "rate-limits"
+   ]
+  },
+  {
+   "id": "recibo-de-pagamento",
+   "title": "Recibo de pagamento",
+   "text": "O recibo é o comprovante de que um pagamento foi aprovado. Ele é enviado por e-mail logo depois de cada cobrança bem-sucedida, seja no cartão, no Pix ou no boleto, e mostra valor, data, forma de pagamento e o número da fatura a que se refere.\n\nO recibo não substitui a fatura, que detalha o que foi cobrado, nem a nota fiscal: para fins contábeis no Brasil, o documento válido é a NFS-e. Se você não recebeu o recibo, confira a lista de e-mails em Billing > Contatos. Dá para reenviar qualquer recibo dos últimos 12 meses pelo botão Reenviar na fatura correspondente.\n",
+   "lang": "pt",
+   "tags": [
+    "cobranca"
+   ]
+  },
+  {
+   "id": "refund-policy",
+   "title": "Refund policy",
+   "text": "Monthly plans are not refundable. Annual plans can be refunded in full if you ask within 14 days of the purchase; after that, there are no prorated refunds. If you downgrade or remove members in the middle of a cycle, the unused value becomes account credit on your next invoice, not money back.\n\nUsage charges are only refunded when they come from a billing error on our side, such as a duplicate charge. Approved refunds go back to the original payment method in 5 to 10 business days. To ask for one, open a support ticket with the invoice number.\n",
+   "lang": "en",
+   "tags": [
+    "billing"
+   ]
+  },
+  {
+   "id": "regioes-e-latencia",
+   "title": "Regiões e latência",
+   "text": "A Nimbus roda aplicações em cinco regiões:\n\n| Código | Localização           |\n| ------ | --------------------- |\n| `gru1` | São Paulo, Brasil     |\n| `iad1` | Washington, D.C., EUA |\n| `fra1` | Frankfurt, Alemanha   |\n| `sin1` | Singapura             |\n| `nrt1` | Tóquio, Japão         |\n\nSe você não escolher nada, os projetos novos vão para `iad1`. Para mudar, defina a região no `nimbus.toml`:\n\n```toml\nregions = [\"gru1\"]\n```\n\n## Como escolher\n\nA regra prática é colocar a aplicação perto do banco de dados, e os dois perto da maioria dos usuários. Uma aplicação em `gru1` que consulta um banco em `iad1` paga a viagem de ida e volta a cada consulta, o que costuma ser pior do que ter tudo nos EUA.\n\nValores típicos de latência de rede para um usuário em São Paulo:\n\n| Destino | Latência típica |\n| ------- | --------------- |\n| `gru1`  | 10 a 25 ms      |\n| `iad1`  | cerca de 120 ms |\n| `fra1`  | cerca de 200 ms |\n| `nrt1`  | cerca de 260 ms |\n\nConteúdo estático e respostas com cache são servidos pela rede de borda, com mais de 30 pontos de presença, independentemente da região da aplicação.\n\n## Várias regiões\n\nNo Business, um projeto pode rodar em até 3 regiões ao mesmo tempo; no Enterprise, em todas. O tráfego vai para a região mais próxima do usuário. O banco Nimbus Postgres, porém, tem um único primário, na região em que foi criado. No Business, é possível criar réplicas de leitura em outras regiões; as escritas continuam indo para o primário.\n\n## Mudar de região\n\nPara a aplicação, basta alterar `regions` e fazer um novo deploy. O banco não pode ser movido: crie um banco novo na região desejada e restaure nele um backup do antigo, planejando uma janela de manutenção para as escritas feitas durante a cópia.\n",
+   "lang": "pt",
+   "tags": [
+    "regioes",
+    "desempenho"
+   ]
+  },
+  {
+   "id": "runbook-certificates-and-dns",
+   "title": "Runbook for TLS certificates and DNS",
+   "text": "This runbook covers custom domains on Nimbus: how certificates are issued and renewed, what to do when a certificate is about to expire or already expired, and how to troubleshoot DNS records that do not resolve to Nimbus.\n\n## How certificates work on Nimbus\n\nWhen you add a custom domain to a project, Nimbus issues a TLS certificate for it automatically through an ACME certificate authority. Certificates are valid for 90 days and renewal starts 30 days before expiry, without any action on your side. Renewal uses an HTTP challenge served by Nimbus itself, so it only works while the domain's DNS points to Nimbus.\n\nIf renewal keeps failing, Nimbus warns you twice: an email to the project's Owners and Admins when 14 days remain, and a `domain.certificate_expiring` webhook event at the same moment, which you can route to your on-call tool. Another email is sent when 3 days remain.\n\n## Symptoms\n\n- Browsers show \"Your connection is not private\" or `NET::ERR_CERT_DATE_INVALID` for your domain.\n- API clients fail with `certificate has expired` or `x509: certificate has expired or is not yet valid`.\n- The domain shows `renewal_failed` or `expired` in Console > Domains.\n- You received the 14-day or 3-day warning email.\n\n## Step 1: Check the domain state\n\n```\nnimbus domains inspect app.example.com\n```\n\nThe output shows the certificate's expiry date, the result of the last renewal attempt with its error message, and the DNS records Nimbus sees for the domain. Most problems are explained by that last error message.\n\n## Step 2: Common causes of failed renewals\n\n### DNS no longer points to Nimbus\n\nSomeone moved the domain to another provider, changed the record during a migration, or the domain registration itself expired. The challenge request never reaches Nimbus. Fix the DNS records (see \"DNS configuration\" below) and force a renewal.\n\n### A CAA record blocks the certificate authority\n\nCAA records list which authorities may issue certificates for a domain. If your domain or its parent has CAA records, one of them must allow `nimbus.dev`:\n\n```\nexample.com.  CAA 0 issue \"nimbus.dev\"\n```\n\nAdding a CAA record for another provider without including Nimbus is a frequent cause of renewal failures months after the domain was set up.\n\n### A proxy in front of Nimbus\n\nIf a CDN or proxy sits in front of Nimbus and terminates TLS itself, the challenge request is answered by the proxy and never reaches Nimbus. Either turn the proxy off for the domain (DNS only), or let the proxy handle the public certificate and keep Nimbus for origin traffic.\n\n## Step 3: Force a renewal\n\nAfter fixing the cause, do not wait for the next automatic attempt, which can be hours away:\n\n```\nnimbus domains cert renew app.example.com\n```\n\nIssuance usually completes in under two minutes. Run `nimbus domains inspect` again to confirm the new expiry date.\n\n## Custom certificates\n\nOn Business and Enterprise you can upload your own certificate instead, for example an extended validation certificate required by a client:\n\n```\nnimbus domains cert upload app.example.com --cert fullchain.pem --key privkey.pem\n```\n\nUploaded certificates are never renewed by Nimbus. You must upload the new one before the old expires, and the expiry warnings described above still apply. To return to automatic certificates, run `nimbus domains cert auto app.example.com`.\n\n## DNS configuration\n\nUse these records when connecting a domain to a project:\n\n| Domain type                   | Record | Value                             |\n| ----------------------------- | ------ | --------------------------------- |\n| Subdomain (`app.example.com`) | CNAME  | `cname.nimbus-dns.net`            |\n| Apex (`example.com`)          | A      | `203.0.113.10` and `203.0.113.11` |\n\nPrefer subdomains with a CNAME: they follow changes in Nimbus's network without any action from you. If your DNS provider supports CNAME flattening or ALIAS records at the apex, you can use `cname.nimbus-dns.net` there too.\n\nBefore a domain is attached to a project, Nimbus asks you to prove ownership with a TXT record named `_nimbus-challenge` on the domain, holding a value shown in the console. You can remove it after verification succeeds.\n\n## Troubleshooting DNS\n\n### The domain does not resolve to Nimbus\n\nQuery the records directly, bypassing caches:\n\n```\ndig +short app.example.com CNAME\ndig +short example.com A @1.1.1.1\ndig +short _nimbus-challenge.app.example.com TXT\n```\n\nIf the answer is empty or shows another provider's addresses, the record is missing or wrong at your DNS host. Check also that you edited the zone at the provider that is actually authoritative: `dig NS example.com` shows the name servers in use.\n\n### Changes are not visible yet\n\nDNS changes propagate according to the TTL of the old record. If the old record had a TTL of one day, some resolvers may keep the old answer for up to a day. Before a planned migration, lower the TTL to 300 seconds a day ahead.\n\n### Conflicting records\n\nA name cannot have a CNAME together with other records. If you added a CNAME to a subdomain that already had A or MX records, many providers silently keep the old ones. Remove the conflicting records.\n\n## Verification\n\n- `nimbus domains inspect` shows status `active` and an expiry date more than 30 days away.\n- `curl -vI https://app.example.com` completes the TLS handshake and shows the new certificate's dates.\n- The domain warning is gone from the console.\n\n## Preventing the next one\n\nRoute the `domain.certificate_expiring` webhook to your alerting tool, keep CAA records in a reviewed configuration file, and avoid putting a proxy in front of Nimbus unless you have a clear reason.\n",
+   "lang": "en",
+   "tags": [
+    "runbook",
+    "domains",
+    "tls",
+    "dns"
+   ]
+  },
+  {
+   "id": "runbook-elevated-5xx",
+   "title": "Runbook for elevated 5xx errors",
+   "text": "Use this runbook when an application on Nimbus starts returning more server errors than usual, typically because an `http_5xx_rate` alert fired. Work through the steps in order. Most incidents are solved by step 3.\n\n## Before you start\n\nOpen three things side by side: the project's Metrics tab, a terminal with `nimbus logs --project <name> --follow --level error`, and status.nimbus.dev. Write down the time the errors started; you will need it to correlate with deployments and to file a ticket if the cause is on our side.\n\n## Step 1: Is it Nimbus or is it you?\n\nCheck status.nimbus.dev for the region your project runs in. If the Edge network or Postgres component shows an open incident in that region, the errors are probably not caused by your code. Subscribe to the incident, avoid making changes that would complicate the picture, and skip to \"Communicating\" below.\n\nIf the status page is green, look at whether the problem is limited to one project. Errors across several unrelated projects in the same region, with no deploy in any of them, are worth reporting to support even before the status page shows anything. Include request IDs.\n\n## Step 2: Identify the kind of 5xx\n\nNot all 5xx errors mean the same thing. The edge network adds an `X-Nimbus-Error` header when it generates the error itself; responses produced by your code do not have it.\n\n| What you see                 | Who produced it  | Usual cause                                      |\n| ---------------------------- | ---------------- | ------------------------------------------------ |\n| 500 without `X-Nimbus-Error` | Your application | An unhandled exception in your code              |\n| 502 `upstream_error`         | Edge             | The process crashed or closed the connection     |\n| 503 `no_healthy_instances`   | Edge             | No instance passes the health check              |\n| 504 `upstream_timeout`       | Edge             | The handler took longer than the request timeout |\n\nRun `nimbus logs --project api --since 30m --search \"X-Nimbus-Error\"` to count edge errors by code, or use the status code breakdown in the Metrics tab.\n\n## Step 3: Correlate with recent deployments\n\n```\nnimbus deployments list --project api --env production --limit 5\n```\n\nIf a deployment went live shortly before the errors started, roll it back first and investigate later:\n\n```\nnimbus rollback --project api\n```\n\nThe rollback reuses the previous build and takes a few seconds. Remember that it restores the environment variables from that older deployment's snapshot. If the errors stop, you have your cause; open the faulty deployment's logs at leisure. Also consider changes that are not deployments: a modified environment variable takes effect on the next deploy, so the culprit may be a variable changed days ago and picked up by today's release.\n\n## Step 4: Check dependencies\n\nWhen there was no recent deploy, the usual suspect is a dependency.\n\n### Database connections\n\nA burst of `500` responses with errors like `too many connections` or `remaining connection slots are reserved` means the database ran out of connections. Nimbus Postgres allows 100 connections on Pro and 400 on Business. Each instance of your app opens its own pool, so scaling out can make this worse. Point the app at the connection pooler on port 6543 instead of 5432, and lower the pool size per instance.\n\n### Database failover\n\n`terminating connection due to administrator command` in the logs means the database switched primaries. Follow the database failover runbook.\n\n### Third-party APIs\n\nIf your logs show timeouts calling an external service, your handlers are probably waiting on it until the request timeout, which turns into 504s. Add a client-side timeout shorter than the request timeout and return a degraded response instead.\n\n## Step 5: Capacity\n\nIf CPU or memory are close to the limit on every instance, or `cold_starts` jumped, the app may simply need more instances:\n\n```\nnimbus scale --project api --min 3 --max 20\n```\n\nScaling takes effect within a minute and does not need a deploy. Memory near the limit followed by restarts points to a memory leak; more instances buys time but does not fix it. A 503 `no_healthy_instances` with low traffic usually means instances fail the health check at boot, not lack of capacity: read the boot logs of the latest deployment.\n\n## Step 6: Timeouts\n\nFor 504 `upstream_timeout`, find the slow endpoints using `latency_p99` broken down by route in the Metrics tab. The default request timeout is 60 seconds. You can raise it in `nimbus.toml`:\n\n```toml\n[http]\ntimeout = 120\n```\n\nThe maximum is 120 seconds on Pro and 300 seconds on Business and Enterprise. Treat this as a stopgap: requests that take minutes belong in a background job that the client polls.\n\n## Verifying recovery\n\n- `http_5xx_rate` is back to its usual level for at least 15 minutes.\n- No new `X-Nimbus-Error` responses in the logs.\n- The alert resolved on its own (it resolves after the metric stays under the threshold for the configured window).\n\n## Communicating\n\nIf the incident affects your users, post on your own status page early and update it at least every 30 minutes. If the cause is on the Nimbus side, open an urgent ticket with the region, the time window and a few request IDs. Business customers may be entitled to service credits under the SLA; claims must be filed within 30 days.\n\n## After the incident\n\nWrite a short post-incident review: timeline, cause, what detected it, what fixed it, and one or two follow-up actions. Good follow-ups from this runbook are adding a health check that exercises the database, adding client timeouts to external calls, and enabling canary deployments so the next bad release reaches only a fraction of traffic.\n",
+   "lang": "en",
+   "tags": [
+    "runbook",
+    "incidents",
+    "errors"
+   ]
+  },
+  {
+   "id": "runbook-failover-banco-de-dados",
+   "title": "Runbook de failover do banco de dados",
+   "text": "Este runbook é para equipes que usam o Nimbus Postgres e estão diante de um banco indisponível, lento ou que acabou de trocar de primário. Siga as seções na ordem e registre os horários de cada passo para o relatório do incidente.\n\n## Como a alta disponibilidade funciona\n\nBancos com alta disponibilidade (HA) têm um primário e um standby em outra zona da mesma região, com replicação síncrona: uma transação só é confirmada depois de gravada nos dois. A HA vem incluída no Business e no Enterprise; no Pro, é um complemento contratado por banco.\n\nQuando o primário fica sem responder às verificações de saúde por 30 segundos, a Nimbus promove o standby automaticamente. O processo completo costuma levar de 30 a 90 segundos, contados desde a falha. A string de conexão não muda: o endereço `db-<id>.pg.nimbus.dev` passa a apontar para o novo primário, com TTL de DNS de 5 segundos.\n\nBancos sem HA não têm failover automático. Se o servidor de um banco sem HA falhar, a Nimbus recria a instância a partir do último backup e do log de transações, o que pode levar de 10 a 30 minutos.\n\n## Sintomas\n\n- Erros de conexão na aplicação, como `connection refused` ou `terminating connection due to administrator command` (código `57P01`).\n- Aumento repentino de respostas 5xx em endpoints que usam o banco.\n- No console, o banco aparece com o status `failing_over` ou um evento \"Primary promoted\" na aba Eventos.\n- Alertas de `http_5xx_rate` ou de latência disparados ao mesmo tempo em vários projetos ligados ao mesmo banco.\n\n## Diagnóstico\n\nPrimeiro, confirme o estado do banco:\n\n```\nnimbus db status db_4kz9\nnimbus db events db_4kz9 --since 1h\n```\n\nO status `available` com um evento `failover_completed` recente indica que o failover automático já aconteceu e o banco está saudável; o problema restante provavelmente está nas conexões da aplicação (veja \"Depois do failover\"). O status `failing_over` indica que a troca está em andamento: espere até 2 minutos antes de agir.\n\nDepois, confira status.nimbus.dev, componente Postgres, na região do banco. Se houver um incidente aberto pela Nimbus, acompanhe por lá e não faça failover manual, porque ele pode competir com a recuperação feita pela equipe da plataforma.\n\nPor fim, descarte causas que não são falha do servidor: conexões esgotadas (o limite é de 100 conexões no Pro e 400 no Business), consultas travadas por lock ou disco cheio. Nesses casos o banco responde, mas mal, e um failover não resolve; ele só transfere o problema para o novo primário.\n\n## Failover manual\n\nUse o failover manual quando o primário está degradado mas não caiu, por exemplo com latência de disco muito alta reportada nos eventos, e a Nimbus não fez a troca sozinha. Ele também serve para testar se a sua aplicação aguenta a troca, em horário de baixo movimento.\n\n```\nnimbus db failover db_4kz9 --confirm\n```\n\nO comando exige o papel Admin ou Owner e só funciona em bancos com HA. A troca manual costuma levar menos de 30 segundos, porque não precisa esperar a detecção da falha. Não rode o comando duas vezes seguidas: enquanto o novo standby não estiver pronto, um segundo failover é recusado com o erro `409 conflict`.\n\n## Depois do failover\n\n### Reconexão da aplicação\n\nAs conexões abertas com o primário antigo são encerradas. Transações que estavam em andamento são abortadas e precisam ser repetidas pela aplicação. Bibliotecas de pool costumam reconectar sozinhas, mas algumas guardam conexões quebradas por vários minutos. Se os erros continuarem depois que o banco voltou para `available`, reinicie as instâncias da aplicação com `nimbus restart --project api`.\n\nPara reduzir o impacto em trocas futuras, use o pooler de conexões da Nimbus na porta 6543 em vez da porta 5432: ele segura novas conexões por alguns segundos durante a troca, em vez de recusá-las.\n\n### Novo standby\n\nDepois de qualquer failover, a Nimbus cria um novo standby automaticamente. Isso leva cerca de 10 minutos para bancos de até 100 GB. Durante essa janela o banco está sem proteção de HA, então evite manutenções e migrações pesadas até o status mostrar `ha: healthy`.\n\n### Verificação\n\n- `nimbus db status db_4kz9` mostra `available` e `ha: healthy`.\n- A métrica `http_5xx_rate` voltou ao nível normal.\n- Não há erros `57P01` nos logs dos últimos 10 minutos.\n\n## Se o failover não resolver\n\nSe os dados foram corrompidos ou apagados por engano, um failover não ajuda, porque o standby recebe as mesmas alterações. Nesse caso, use a recuperação para um ponto no tempo (PITR):\n\n```\nnimbus db restore db_4kz9 --to \"2026-09-30T14:05:00Z\" --name db-restaurado\n```\n\nO restore cria um banco novo; o original não é alterado. A janela de recuperação é de 7 dias no Pro e 30 dias no Business. Depois de validar os dados no banco restaurado, aponte a variável `DATABASE_URL` da aplicação para ele e faça um novo deploy.\n\n## Comunicação\n\nDurante o incidente, abra um chamado de prioridade urgente informando o ID do banco, o horário do início e os IDs de requisição com erro. Clientes Business e Enterprise têm atendimento 24 horas para chamados urgentes. Se o incidente afetar seus próprios clientes, atualize a sua página de status a cada 30 minutos, mesmo sem novidade.\n",
+   "lang": "pt",
+   "tags": [
+    "runbook",
+    "banco-de-dados",
+    "incidentes"
+   ]
+  },
+  {
+   "id": "runbook-fila-de-webhooks",
+   "title": "Runbook de fila de webhooks acumulada",
+   "text": "Use este runbook quando os eventos de webhook estão chegando com atraso grande ao seu endpoint, ou quando o painel do endpoint mostra muitos eventos pendentes. O objetivo é esvaziar a fila sem perder eventos e sem processar nada duas vezes.\n\n## Sintomas\n\n- O contador \"Pendentes\" em Console > Webhooks > (endpoint) cresce em vez de cair.\n- Eventos como `deployment.ready` chegam minutos ou horas depois do que aconteceu.\n- O log de entregas mostra muitas tentativas com status `timeout` ou respostas 5xx do seu servidor.\n- Você recebeu o e-mail avisando que o endpoint está prestes a ser desativado.\n\n## Como a fila funciona\n\nCada endpoint tem uma fila própria. A Nimbus envia até 10 requisições simultâneas para o mesmo endpoint (50 no Business e no Enterprise). Uma entrega só libera espaço para a próxima quando o seu servidor responde ou quando estoura o tempo limite de 10 segundos. Por isso, um endpoint lento acumula fila mesmo que nunca devolva erro: se cada resposta leva 9 segundos, o endpoint processa pouco mais de uma entrega por segundo.\n\nA ordem de entrega não é garantida, e as novas tentativas de eventos que falharam competem pelo mesmo espaço com os eventos novos. Eventos que ficam mais de 72 horas na fila sem conseguir ser entregues são descartados da fila e aparecem no log de entregas com o status `expired`. Eles não somem: ainda podem ser reenviados pelo replay enquanto estiverem no log, que guarda 30 dias.\n\n## Diagnóstico\n\nListe as entregas com falha recentes e veja o tempo de resposta:\n\n```\nnimbus webhooks deliveries list --endpoint we_3k9d --status failed --since 1h\nnimbus webhooks endpoint show we_3k9d\n```\n\nO comando `endpoint show` mostra o tamanho da fila, o tempo médio de resposta nos últimos 15 minutos e a taxa de sucesso. Em geral, o problema cai em um destes casos:\n\n1. **Endpoint lento.** Taxa de sucesso alta, mas tempo de resposta perto de 10 segundos. O seu handler está fazendo trabalho pesado antes de responder.\n2. **Endpoint quebrando.** Muitas respostas 5xx ou erros de conexão. Pode ser um deploy recente do lado do receptor, um certificado TLS inválido ou um firewall bloqueando a Nimbus.\n3. **Pico de eventos.** Taxa de sucesso e tempo normais, mas um volume fora do comum, como um deploy em massa ou o fechamento das faturas no dia 1º.\n4. **Assinatura rejeitada.** Respostas 400 ou 401 do seu próprio código, normalmente depois de uma troca do segredo de assinatura que não chegou a todos os servidores.\n\n## Mitigação\n\n### Responda rápido e processe depois\n\nA correção mais eficaz para o caso 1 é mudar o handler para validar a assinatura, gravar o evento numa fila sua e responder 200 imediatamente. O processamento pesado acontece em segundo plano. Com isso, o tempo de resposta cai para milissegundos e a fila da Nimbus esvazia rápido.\n\n### Pausar o endpoint\n\nSe o receptor está fora do ar e vai demorar para voltar, pause o endpoint para que as entregas parem de falhar e de gastar tentativas:\n\n```\nnimbus webhooks pause we_3k9d\nnimbus webhooks resume we_3k9d\n```\n\nEnquanto pausado, os eventos se acumulam na fila e nenhuma tentativa é consumida. Lembre-se do limite de 72 horas na fila. Um endpoint que só recebe falhas por 72 horas seguidas é desativado automaticamente; pausar evita essa desativação.\n\n### Absorver um pico de eventos\n\nNo caso 3, o receptor está saudável e a fila vai esvaziar sozinha; a pergunta é quanto tempo isso leva. Divida o tamanho da fila pela vazão atual do endpoint, que aparece em `endpoint show`, para estimar. Se a espera for aceitável, não faça nada além de acompanhar. Se não for, há duas saídas: deixar o handler mais rápido, como descrito acima, ou aumentar a concorrência. O limite de 10 requisições simultâneas do Pro sobe para 50 com a mudança para o Business, e clientes Enterprise podem pedir ao suporte até 200 por endpoint. Antes de pedir mais concorrência, confirme que o seu servidor aguenta esse volume de requisições paralelas; caso contrário, você só troca timeouts por erros 5xx.\n\n### Corrigir o receptor\n\nPara o caso 2, trate como um incidente comum do seu serviço: reverta o último deploy do receptor, verifique o certificado e confirme que os endereços de saída da Nimbus, publicados em `https://api.nimbus.dev/v2/meta/egress-ips`, estão liberados no firewall. Para o caso 4, confirme que todos os servidores aceitam as duas assinaturas durante as 24 horas de transição do segredo.\n\n## Reprocessar eventos perdidos\n\nDepois que o receptor estiver saudável, reenvie o que falhou ou expirou. O replay em lote aceita um intervalo de tempo e um filtro de status:\n\n```\nnimbus webhooks replay --endpoint we_3k9d \\\n  --since 2026-09-30T00:00:00Z --until 2026-09-30T06:00:00Z \\\n  --status failed,expired\n```\n\nO replay respeita o mesmo limite de concorrência do endpoint, então um lote grande também leva tempo. Comece com uma janela pequena para confirmar que tudo está funcionando. Os eventos reenviados mantêm o mesmo `Nimbus-Event-Id` da entrega original.\n\n## Depois do incidente\n\n- Confirme que o contador \"Pendentes\" voltou a zero e que a taxa de sucesso está acima de 99%.\n- Garanta que o handler é idempotente. Replays e novas tentativas fazem eventos já processados chegarem de novo, e o `Nimbus-Event-Id` é o que permite ignorá-los.\n- Crie um alerta para o tempo de resposta do endpoint, usando o canal de e-mail ou Slack, para perceber a lentidão antes da fila crescer.\n- Registre no relatório do incidente quantos eventos expiraram e se todos foram reprocessados.\n",
+   "lang": "pt",
+   "tags": [
+    "runbook",
+    "webhooks",
+    "incidentes"
+   ]
+  },
+  {
+   "id": "sdks",
+   "title": "Official SDKs",
+   "text": "Nimbus maintains official SDKs for three languages:\n\n| Language | Package                           | Minimum runtime |\n| -------- | --------------------------------- | --------------- |\n| Node.js  | `@nimbus/sdk`                     | Node 18         |\n| Python   | `nimbus-sdk`                      | Python 3.9      |\n| Go       | `github.com/nimbus-dev/nimbus-go` | Go 1.21         |\n\nA community-maintained PHP library also exists, but it is not supported by Nimbus.\n\n## Versions\n\nSDK v4 talks to API v2 and is the version to use for new code. SDK v3 talks to API v1; it receives only security fixes and stops working when API v1 is retired on 2027-03-31. Upgrading from v3 to v4 is mostly a matter of renaming `apps` to `projects` in method calls; see the v1 to v2 migration guide.\n\n## Configuration\n\nAll SDKs read the API key from the `NIMBUS_API_KEY` environment variable when you do not pass one explicitly:\n\n```js\nimport { Nimbus } from \"@nimbus/sdk\";\n\nconst nimbus = new Nimbus(); // uses NIMBUS_API_KEY\nconst project = await nimbus.projects.get(\"prj_42\");\n```\n\nOther options are `timeout` (30 seconds by default), `maxRetries` (3 by default) and `baseUrl`, which is useful when testing against a mock server.\n\n## Helpers\n\n- **Pagination.** List methods return async iterators that follow the cursor for you: `for await (const d of nimbus.deployments.list(\"prj_42\"))`.\n- **Webhooks.** `nimbus.webhooks.verify(rawBody, signatureHeader, secret)` checks the signature and the timestamp tolerance and returns the parsed event.\n- **Errors.** API errors are raised as `NimbusError` with `code`, `status` and `requestId` fields, so you can branch on `err.code === \"rate_limited\"`.\n\nBugs and feature requests for the SDKs go to their public repositories; questions about your account go to support.\n",
+   "lang": "en",
+   "tags": [
+    "sdk",
+    "api"
+   ]
+  },
+  {
+   "id": "sso-saml-equipes",
+   "title": "SSO com SAML para equipes",
+   "text": "O login único (SSO) com SAML 2.0 permite que sua equipe entre na Nimbus usando o provedor de identidade da empresa, em vez de senha própria. O recurso está disponível nos planos Business e Enterprise. Testamos a integração com Okta, Microsoft Entra ID, Google Workspace e JumpCloud, mas qualquer provedor compatível com SAML 2.0 deve funcionar.\n\n## Configuração\n\n1. **Verifique o domínio.** Em Console > Configurações > Segurança > SSO, informe o domínio de e-mail da empresa. A Nimbus gera um registro TXT no formato `nimbus-verify=...`, que você cria no DNS. A verificação costuma levar poucos minutos.\n2. **Crie o aplicativo no provedor.** Use estes valores, trocando `acme` pelo identificador da sua organização:\n   - ACS URL: `https://auth.nimbus.dev/saml/acme/acs`\n   - Entity ID: `https://auth.nimbus.dev/saml/acme`\n3. **Mapeie os atributos.** O atributo `email` é obrigatório. `firstName`, `lastName` e `groups` são opcionais.\n4. **Envie o metadata.** Faça upload do XML de metadata do provedor no console, ou cole a URL dele.\n5. **Teste.** O botão \"Testar conexão\" abre um login em nova aba sem afetar ninguém da equipe.\n6. **Exija o SSO.** Depois do teste, ative \"Exigir SSO\". A partir daí, membros com e-mail do domínio verificado não conseguem mais entrar com senha.\n\n## Como as contas são criadas\n\nCom o provisionamento just-in-time, quem faz o primeiro login pelo provedor ganha uma conta automaticamente, com o papel Developer. Você pode mudar o papel padrão ou mapear grupos do provedor para papéis da Nimbus. No Enterprise também existe provisionamento via SCIM, que cria, atualiza e desativa contas conforme o diretório da empresa; ao desativar alguém no provedor, o acesso à Nimbus é removido em poucos minutos.\n\n## Detalhes importantes\n\nAs sessões abertas via SSO duram 12 horas; depois disso, o usuário passa pelo provedor de novo. Mesmo com o SSO exigido, os Owners mantêm acesso de emergência por senha e códigos de recuperação, para o caso de o provedor de identidade ficar fora do ar. Chaves de API e clientes OAuth não passam pelo SSO e continuam funcionando normalmente.\n",
+   "lang": "pt",
+   "tags": [
+    "autenticacao",
+    "sso",
+    "equipes"
+   ]
+  },
+  {
+   "id": "status-page-and-sla",
+   "title": "Status page and SLA",
+   "text": "## Status page\n\nThe live state of the platform is published at status.nimbus.dev. It shows each component separately (API, Console, Builds, Edge network, Postgres and Webhooks) for each region, so an outage in `fra1` does not hide the fact that `gru1` is healthy. You can subscribe to updates by email, RSS, a Slack app or a webhook, and choose to follow only the components and regions you use.\n\nDuring a SEV1 incident, the status page is updated at least every 30 minutes, even when there is nothing new to report. A public post-mortem is published within 5 business days after every SEV1. Scheduled maintenance is announced on the status page at least 72 hours in advance.\n\n## Service level agreement\n\n| Plan       | Monthly uptime commitment       |\n| ---------- | ------------------------------- |\n| Hobby, Pro | No financial SLA (99.9% target) |\n| Business   | 99.95%                          |\n| Enterprise | 99.99%                          |\n\nUptime is measured per minute. A minute counts as down when more than 5% of valid requests to the API or to the edge network fail with a 5xx error caused by Nimbus.\n\n## Service credits\n\nIf monthly uptime falls below the commitment, Business customers receive credits on the monthly fee:\n\n| Monthly uptime        | Credit |\n| --------------------- | ------ |\n| 99.0% to below 99.95% | 10%    |\n| 95.0% to below 99.0%  | 25%    |\n| Below 95.0%           | 50%    |\n\nCredits are capped at 50% of the monthly fee and are applied to a future invoice; they are not paid out in cash. Enterprise credits follow the contract.\n\nTo claim credits, open a support ticket within 30 days after the end of the incident, including the affected region and some request IDs from failed calls. Downtime caused by your own code or configuration, by scheduled maintenance announced on time, or by events outside our reasonable control is excluded.\n",
+   "lang": "en",
+   "tags": [
+    "status",
+    "sla",
+    "incidents"
+   ]
+  },
+  {
+   "id": "variaveis-de-ambiente",
+   "title": "Variáveis de ambiente e segredos",
+   "text": "Variáveis de ambiente guardam configurações que mudam entre ambientes, como URLs de serviços, flags e credenciais. Na Nimbus, cada variável pertence a um ambiente: `production`, `staging` ou `preview`. A mesma chave pode ter valores diferentes em cada um.\n\n## Comandos principais\n\n```\nnimbus env set API_URL=https://api.exemplo.com --env production\nnimbus env set DATABASE_PASSWORD --secret --env production\nnimbus env ls --env production\nnimbus env rm FEATURE_X --env preview\nnimbus env pull .env.local\n```\n\nCom `--secret`, o CLI pede o valor de forma interativa, sem que ele apareça no histórico do terminal. Segredos são criptografados com AES-256 e não podem ser lidos depois de criados, nem pelo console nem pela API; dá apenas para sobrescrever ou apagar. Por isso, `nimbus env pull` baixa somente as variáveis comuns, nunca os segredos.\n\n## Quando a mudança vale\n\nAlterar uma variável não muda os deploys que já estão rodando. O valor novo só passa a valer no próximo deploy, porque cada deploy guarda uma cópia das variáveis do momento em que foi criado. Depois de trocar uma senha, rode `nimbus deploy --prod` para publicar com o valor novo.\n\n## Regras e limites\n\n- Nomes devem seguir o padrão `^[A-Z_][A-Z0-9_]*$`, por exemplo `STRIPE_KEY` ou `_INTERNAL_FLAG`.\n- O prefixo `NIMBUS_` é reservado para variáveis do sistema.\n- O tamanho total das variáveis de um ambiente é de até 64 KB.\n\n## Variáveis do sistema\n\nTodo deploy recebe automaticamente `NIMBUS_ENV` (o nome do ambiente), `NIMBUS_REGION` (por exemplo `gru1`) e `NIMBUS_DEPLOYMENT_ID`. Elas são úteis em logs e para ajustar comportamento por ambiente sem criar variáveis próprias.\n",
+   "lang": "pt",
+   "tags": [
+    "deploy",
+    "configuracao",
+    "seguranca"
+   ]
+  },
+  {
+   "id": "webhooks-idempotencia",
+   "title": "Eventos duplicados e idempotência em webhooks",
+   "text": "A Nimbus garante que cada evento será entregue pelo menos uma vez, mas não garante que será entregue uma única vez. Na prática, o mesmo evento pode chegar duas ou mais vezes ao seu endpoint. Isso acontece, por exemplo, quando o seu servidor processa o evento mas demora mais de 10 segundos para responder: para a Nimbus, a entrega falhou, e ela tenta de novo. Também acontece quando alguém da equipe usa o replay para reenviar eventos, ou quando uma falha de rede derruba a conexão depois que a resposta já tinha sido enviada.\n\nPor isso, o processamento precisa ser idempotente, ou seja, receber o mesmo evento várias vezes deve ter o mesmo efeito que recebê-lo uma vez. A forma mais simples é usar o cabeçalho `Nimbus-Event-Id`, que traz um identificador no formato `evt_...` e é o mesmo em todas as tentativas e replays de um evento. Guarde os IDs já processados e ignore os que aparecerem de novo.\n\nUma implementação segura grava o ID do evento numa tabela com restrição de unicidade, dentro da mesma transação que aplica o efeito do evento. Se a gravação falhar por chave duplicada, o evento já foi tratado e basta responder 200. Evite checar primeiro e gravar depois em passos separados: duas entregas simultâneas podem passar pela checagem ao mesmo tempo.\n\nPor quanto tempo guardar os IDs? As tentativas automáticas terminam em cerca de 21 horas, mas o replay manual pode reenviar eventos de até 30 dias atrás. Guardar os IDs por pelo menos 30 dias cobre os dois casos.\n\nTambém não conte com a ordem de chegada. Um `deployment.ready` pode chegar antes do `deployment.building` do mesmo deploy, se a primeira tentativa do segundo evento falhou. Use o campo `created_at` do evento, ou consulte o estado atual do recurso na API, antes de sobrescrever dados mais novos com dados mais antigos.\n",
+   "lang": "pt",
+   "tags": [
+    "webhooks",
+    "confiabilidade"
+   ]
+  },
+  {
+   "id": "webhooks-retries",
+   "title": "Webhook retries and backoff",
+   "text": "A webhook delivery counts as successful when your endpoint answers with any 2xx status within 10 seconds. Everything else is a failure: 4xx and 5xx responses, timeouts, connection errors, TLS errors and also 3xx responses, because Nimbus does not follow redirects.\n\nWhen a delivery fails, Nimbus retries it with an increasing delay. There is one initial attempt and up to seven retries:\n\n| Attempt | Delay after the previous attempt |\n| ------- | -------------------------------- |\n| 2       | 30 seconds                       |\n| 3       | 2 minutes                        |\n| 4       | 10 minutes                       |\n| 5       | 30 minutes                       |\n| 6       | 2 hours                          |\n| 7       | 6 hours                          |\n| 8       | 12 hours                         |\n\nThe last attempt happens about 21 hours after the first one. Each request carries the header `Nimbus-Delivery-Attempt` with the attempt number, which helps when you read your own access logs. If all eight attempts fail, the delivery is marked `failed` in the delivery log and is not retried again automatically. You can still replay it by hand from the console or with `nimbus webhooks replay`.\n\nTwo situations stop retries earlier. If your endpoint answers `410 Gone`, Nimbus treats it as a request to unsubscribe and disables the endpoint immediately. And if an endpoint has received only failures for 72 hours in a row, with no successful delivery in between, it is disabled automatically and the organization's Owners receive an email. A disabled endpoint keeps its configuration and signing secret; turn it back on in the console once the receiving side is fixed.\n\nBecause a delivery can be retried after your server already processed it (for example, when your handler did the work but took longer than 10 seconds to answer), the same event may arrive more than once. Make your handler idempotent by recording the `Nimbus-Event-Id` of each event you have processed.\n",
+   "lang": "en",
+   "tags": [
+    "webhooks",
+    "reliability"
+   ]
+  },
+  {
+   "id": "webhooks-signature-verification",
+   "title": "Verifying webhook signatures",
+   "text": "Anyone who knows your webhook URL can send requests to it, so every handler should check that a delivery really came from Nimbus before acting on it. Each delivery is signed with the endpoint's signing secret, which starts with `whsec_` and is shown in Console > Webhooks > your endpoint.\n\n## The signature header\n\n```\nNimbus-Signature: t=1727990400,v1=5f2b9c0e4d...\n```\n\n`t` is the Unix timestamp of the moment the delivery was signed, and `v1` is a hex-encoded HMAC-SHA256. The signed payload is the timestamp, a dot, and the raw request body: `\"{t}.{raw_body}\"`.\n\n## Example in Node.js\n\n```js\nimport crypto from \"node:crypto\";\n\nfunction verify(rawBody, header, secret) {\n  const parts = Object.fromEntries(header.split(\",\").map((p) => p.split(\"=\")));\n  const age = Math.abs(Date.now() / 1000 - Number(parts.t));\n  if (age > 300) return false;\n  const expected = crypto.createHmac(\"sha256\", secret).update(`${parts.t}.${rawBody}`).digest(\"hex\");\n  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(parts.v1));\n}\n```\n\nThree details matter:\n\n1. Use the raw body bytes. If your framework parses JSON first and you serialize it again, the bytes change and the signature will not match.\n2. Compare with a constant-time function such as `timingSafeEqual`, not with `===`.\n3. Reject timestamps more than 300 seconds away from your clock. This blocks replayed requests. Keep your server clock synced with NTP.\n\nThe official SDKs wrap all of this in one call, for example `nimbus.webhooks.verify(rawBody, header, secret)` in Node.js and `nimbus.webhooks.verify(raw_body, header, secret)` in Python.\n\n## Rolling the signing secret\n\nTo change the secret, run `nimbus webhooks secret roll --endpoint we_3k9d`. For the next 24 hours, deliveries carry two `v1` values in the same header, one per secret, and your handler should accept the request if either matches. After 24 hours, only the new secret is used.\n",
+   "lang": "en",
+   "tags": [
+    "webhooks",
+    "security"
+   ]
+  },
+  {
+   "id": "webhooks-verificar-assinatura",
+   "title": "Como verificar a assinatura de um webhook",
+   "text": "Toda entrega de webhook da Nimbus traz o cabeçalho `Nimbus-Signature`, no formato `t=<timestamp>,v1=<assinatura>`. Para conferir se a requisição veio mesmo da Nimbus, monte uma string com o timestamp, um ponto e o corpo bruto da requisição, exatamente como chegou, sem reformatar o JSON. Calcule o HMAC-SHA256 dessa string usando o segredo do endpoint (ele começa com `whsec_`) e compare o resultado, em hexadecimal, com o valor de `v1`, sempre com uma comparação de tempo constante.\n\nRejeite a entrega se o timestamp estiver a mais de cinco minutos do seu relógio; isso impede que alguém capture uma requisição válida e a reenvie depois. O erro mais comum é deixar o framework fazer o parse do JSON antes da verificação: qualquer espaço ou quebra de linha a mais muda o hash, e a assinatura nunca bate.\n",
+   "lang": "pt",
+   "tags": [
+    "webhooks",
+    "seguranca"
+   ]
+  }
+ ],
+ "queries": [
+  {
+   "id": "q01",
+   "text": "rotate API key grace period",
+   "lang": "en",
+   "tags": [
+    "keyword"
+   ]
+  },
+  {
+   "id": "q02",
+   "text": "como faco rotacao de chave de api sem derrubar a aplicacao",
+   "lang": "pt",
+   "tags": [
+    "no-accents"
+   ]
+  },
+  {
+   "id": "q03",
+   "text": "Nimbus-Signature header HMAC",
+   "lang": "en",
+   "tags": [
+    "keyword"
+   ]
+  },
+  {
+   "id": "q04",
+   "text": "como saber se a requisição que chegou no meu endpoint foi mesmo enviada pela Nimbus",
+   "lang": "pt",
+   "tags": [
+    "paraphrase"
+   ]
+  },
+  {
+   "id": "q05",
+   "text": "my endpoint keeps receiving the same event twice",
+   "lang": "en",
+   "tags": [
+    "paraphrase",
+    "cross-lingual"
+   ]
+  },
+  {
+   "id": "q06",
+   "text": "how many times does Nimbus try to deliver an event again when my server is offline",
+   "lang": "en",
+   "tags": [
+    "paraphrase"
+   ]
+  },
+  {
+   "id": "q07",
+   "text": "does the SDK automatically try again when a call fails",
+   "lang": "en",
+   "tags": [
+    "paraphrase"
+   ]
+  },
+  {
+   "id": "q08",
+   "text": "429 Retry-After rate limit headers",
+   "lang": "en",
+   "tags": [
+    "keyword"
+   ]
+  },
+  {
+   "id": "q09",
+   "text": "o que e burst no limite de requisicoes da api",
+   "lang": "pt",
+   "tags": [
+    "no-accents",
+    "cross-lingual"
+   ]
+  },
+  {
+   "id": "q10",
+   "text": "still getting too many requests errors after creating more API keys",
+   "lang": "en",
+   "tags": [
+    "paraphrase"
+   ]
+  },
+  {
+   "id": "q11",
+   "text": "erro quota_exceeded cota excedida",
+   "lang": "pt",
+   "tags": [
+    "keyword"
+   ]
+  },
+  {
+   "id": "q12",
+   "text": "quantos projetos posso criar no plano gratuito",
+   "lang": "pt",
+   "tags": [
+    "paraphrase"
+   ]
+  },
+  {
+   "id": "q13",
+   "text": "como fazer rollback do deploy",
+   "lang": "pt",
+   "tags": [
+    "keyword"
+   ]
+  },
+  {
+   "id": "q14",
+   "text": "after going back to an older release the app uses an outdated database password",
+   "lang": "en",
+   "tags": [
+    "paraphrase"
+   ]
+  },
+  {
+   "id": "q15",
+   "text": "canary deployment auto promote",
+   "lang": "en",
+   "tags": [
+    "keyword",
+    "long-doc"
+   ]
+  },
+  {
+   "id": "q16",
+   "text": "what happens if my webhook endpoint returns 410",
+   "lang": "en",
+   "tags": [
+    "keyword"
+   ]
+  },
+  {
+   "id": "q17",
+   "text": "cache de build nao e invalidado quando mudo as dependencias",
+   "lang": "pt",
+   "tags": [
+    "no-accents"
+   ]
+  },
+  {
+   "id": "q18",
+   "text": "mudei uma variável e a aplicação continua lendo o valor antigo",
+   "lang": "pt",
+   "tags": [
+    "paraphrase"
+   ]
+  },
+  {
+   "id": "q19",
+   "text": "meus usuários estão no Brasil, onde devo hospedar a aplicação para ela responder mais rápido?",
+   "lang": "pt",
+   "tags": [
+    "paraphrase"
+   ]
+  },
+  {
+   "id": "q20",
+   "text": "como acompanhar os logs em tempo real pelo terminal",
+   "lang": "pt",
+   "tags": [
+    "long-doc"
+   ]
+  },
+  {
+   "id": "q21",
+   "text": "retenção de logs por plano",
+   "lang": "pt",
+   "tags": [
+    "keyword"
+   ]
+  },
+  {
+   "id": "q22",
+   "text": "log drain to Datadog",
+   "lang": "en",
+   "tags": [
+    "keyword"
+   ]
+  },
+  {
+   "id": "q23",
+   "text": "configurar alerta de latencia e erros 5xx no slack",
+   "lang": "pt",
+   "tags": [
+    "no-accents",
+    "long-doc"
+   ]
+  },
+  {
+   "id": "q24",
+   "text": "quero ser avisado antes de a conta do mês ficar cara demais",
+   "lang": "pt",
+   "tags": [
+    "paraphrase"
+   ]
+  },
+  {
+   "id": "q25",
+   "text": "o limite rígido do orçamento bloqueia os builds?",
+   "lang": "pt",
+   "tags": [
+    "keyword"
+   ]
+  },
+  {
+   "id": "q26",
+   "text": "quanto tempo demora o failover automático do banco",
+   "lang": "pt",
+   "tags": [
+    "long-doc"
+   ]
+  },
+  {
+   "id": "q27",
+   "text": "comando de failover manual do bano de dados",
+   "lang": "pt",
+   "tags": [
+    "typo",
+    "long-doc"
+   ]
+  },
+  {
+   "id": "q28",
+   "text": "aplicação não reconecta no postgres depois que o primário mudou",
+   "lang": "pt",
+   "tags": [
+    "morphology",
+    "long-doc"
+   ]
+  },
+  {
+   "id": "q29",
+   "text": "obrigar todo mundo da equipe a usar autenticação em dois fatores",
+   "lang": "pt",
+   "tags": [
+    "paraphrase"
+   ]
+  },
+  {
+   "id": "q30",
+   "text": "qual o valor do CNAME para apontar meu subdomínio para a Nimbus",
+   "lang": "pt",
+   "tags": [
+    "cross-lingual",
+    "long-doc"
+   ]
+  },
+  {
+   "id": "q31",
+   "text": "browser says my site is not secure on our own domain",
+   "lang": "en",
+   "tags": [
+    "paraphrase"
+   ]
+  },
+  {
+   "id": "q32",
+   "text": "504 upstream_timeout",
+   "lang": "en",
+   "tags": [
+    "keyword"
+   ]
+  },
+  {
+   "id": "q33",
+   "text": "minha aplicação começou a dar erro 502 depois do deploy, o que fazer?",
+   "lang": "pt",
+   "tags": [
+    "cross-lingual",
+    "paraphrase"
+   ]
+  },
+  {
+   "id": "q34",
+   "text": "too many conections postgres pooler",
+   "lang": "en",
+   "tags": [
+    "typo"
+   ]
+  },
+  {
+   "id": "q35",
+   "text": "insufficient_scope error",
+   "lang": "en",
+   "tags": [
+    "keyword"
+   ]
+  },
+  {
+   "id": "q36",
+   "text": "permissoes disponiveis para uma chave de api",
+   "lang": "pt",
+   "tags": [
+    "no-accents",
+    "long-doc"
+   ]
+  },
+  {
+   "id": "q37",
+   "text": "o token de acesso expira em uma hora, como renovar sem refresh token?",
+   "lang": "pt",
+   "tags": [
+    "cross-lingual"
+   ]
+  },
+  {
+   "id": "q38",
+   "text": "configurar SSO SAML com Okta",
+   "lang": "pt",
+   "tags": [
+    "keyword"
+   ]
+  },
+  {
+   "id": "q39",
+   "text": "make everyone on the team sign in with our company Google account",
+   "lang": "en",
+   "tags": [
+    "paraphrase",
+    "cross-lingual"
+   ]
+  },
+  {
+   "id": "q40",
+   "text": "convidei um desenvolvedor mas o convite expirou",
+   "lang": "pt",
+   "tags": [
+    "morphology",
+    "paraphrase"
+   ]
+  },
+  {
+   "id": "q41",
+   "text": "membro com papel viewer paga assento?",
+   "lang": "pt",
+   "tags": [
+    "keyword"
+   ]
+  },
+  {
+   "id": "q42",
+   "text": "refund annual plan",
+   "lang": "en",
+   "tags": [
+    "keyword"
+   ]
+  },
+  {
+   "id": "q43",
+   "text": "cartao recusado o que acontece com a conta",
+   "lang": "pt",
+   "tags": [
+    "no-accents"
+   ]
+  },
+  {
+   "id": "q44",
+   "text": "invoicing date and downloading invoices as PDF",
+   "lang": "en",
+   "tags": [
+    "morphology"
+   ]
+  },
+  {
+   "id": "q45",
+   "text": "nota fiscal NFS-e com CNPJ",
+   "lang": "pt",
+   "tags": [
+    "keyword"
+   ]
+  },
+  {
+   "id": "q46",
+   "text": "sla de disponibilidade e credito por indisponibilidde",
+   "lang": "pt",
+   "tags": [
+    "typo",
+    "no-accents",
+    "cross-lingual"
+   ]
+  },
+  {
+   "id": "q47",
+   "text": "where can I check if Nimbus is down right now",
+   "lang": "en",
+   "tags": [
+    "paraphrase"
+   ]
+  },
+  {
+   "id": "q48",
+   "text": "LGPD data subject request deadline",
+   "lang": "en",
+   "tags": [
+    "cross-lingual"
+   ]
+  },
+  {
+   "id": "q49",
+   "text": "exportar todos os dados da organização",
+   "lang": "pt",
+   "tags": [
+    "cross-lingual"
+   ]
+  },
+  {
+   "id": "q50",
+   "text": "pagar com pix e receber a nota fiscal no CNPJ da empresa",
+   "lang": "pt",
+   "tags": [
+    "multi-doc"
+   ]
+  },
+  {
+   "id": "q51",
+   "text": "diferença entre fatura, recibo e nota fiscal",
+   "lang": "pt",
+   "tags": [
+    "multi-doc"
+   ]
+  },
+  {
+   "id": "q52",
+   "text": "how to rotate both the webhook signing secret and the API keys",
+   "lang": "en",
+   "tags": [
+    "multi-doc"
+   ]
+  },
+  {
+   "id": "q53",
+   "text": "migrate webhook endpoints from v1 to v2 signatures and verify the new header",
+   "lang": "en",
+   "tags": [
+    "multi-doc"
+   ]
+  },
+  {
+   "id": "q54",
+   "text": "how fast does support answer on the Pro plan",
+   "lang": "en",
+   "tags": [
+    "cross-lingual"
+   ]
+  },
+  {
+   "id": "q55",
+   "text": "python sdk minimum version",
+   "lang": "en",
+   "tags": [
+    "keyword"
+   ]
+  },
+  {
+   "id": "q56",
+   "text": "when will API v1 stop working",
+   "lang": "en",
+   "tags": [
+    "paraphrase"
+   ]
+  },
+  {
+   "id": "q57",
+   "text": "cursor pagination starting_after",
+   "lang": "en",
+   "tags": [
+    "long-doc"
+   ]
+  },
+  {
+   "id": "q58",
+   "text": "webhooks atrasados com fila acumulando",
+   "lang": "pt",
+   "tags": [
+    "keyword"
+   ]
+  },
+  {
+   "id": "q59",
+   "text": "recibo nao chegou depois do pagamento",
+   "lang": "pt",
+   "tags": [
+    "no-accents"
+   ]
+  },
+  {
+   "id": "q60",
+   "text": "chave de api vazou no github",
+   "lang": "pt",
+   "tags": [
+    "long-doc"
+   ]
+  }
+ ],
+ "judgments": [
+  {
+   "queryId": "q01",
+   "docId": "api-keys-rotation",
+   "grade": 3
+  },
+  {
+   "queryId": "q01",
+   "docId": "faq-autenticacao",
+   "grade": 2
+  },
+  {
+   "queryId": "q02",
+   "docId": "faq-autenticacao",
+   "grade": 3
+  },
+  {
+   "queryId": "q02",
+   "docId": "api-keys-rotation",
+   "grade": 3
+  },
+  {
+   "queryId": "q03",
+   "docId": "webhooks-signature-verification",
+   "grade": 3
+  },
+  {
+   "queryId": "q03",
+   "docId": "webhooks-verificar-assinatura",
+   "grade": 3
+  },
+  {
+   "queryId": "q03",
+   "docId": "migration-guide-v1-v2",
+   "grade": 1
+  },
+  {
+   "queryId": "q03",
+   "docId": "sdks",
+   "grade": 1
+  },
+  {
+   "queryId": "q04",
+   "docId": "webhooks-verificar-assinatura",
+   "grade": 3
+  },
+  {
+   "queryId": "q04",
+   "docId": "webhooks-signature-verification",
+   "grade": 3
+  },
+  {
+   "queryId": "q05",
+   "docId": "webhooks-idempotencia",
+   "grade": 3
+  },
+  {
+   "queryId": "q05",
+   "docId": "webhooks-retries",
+   "grade": 2
+  },
+  {
+   "queryId": "q05",
+   "docId": "runbook-fila-de-webhooks",
+   "grade": 1
+  },
+  {
+   "queryId": "q06",
+   "docId": "webhooks-retries",
+   "grade": 3
+  },
+  {
+   "queryId": "q06",
+   "docId": "runbook-fila-de-webhooks",
+   "grade": 1
+  },
+  {
+   "queryId": "q07",
+   "docId": "api-client-retries",
+   "grade": 3
+  },
+  {
+   "queryId": "q07",
+   "docId": "sdks",
+   "grade": 2
+  },
+  {
+   "queryId": "q08",
+   "docId": "rate-limits",
+   "grade": 3
+  },
+  {
+   "queryId": "q08",
+   "docId": "limites-de-requisicao",
+   "grade": 2
+  },
+  {
+   "queryId": "q08",
+   "docId": "api-reference-errors",
+   "grade": 1
+  },
+  {
+   "queryId": "q09",
+   "docId": "rate-limits",
+   "grade": 3
+  },
+  {
+   "queryId": "q09",
+   "docId": "limites-de-requisicao",
+   "grade": 1
+  },
+  {
+   "queryId": "q10",
+   "docId": "rate-limits",
+   "grade": 3
+  },
+  {
+   "queryId": "q10",
+   "docId": "limites-de-requisicao",
+   "grade": 3
+  },
+  {
+   "queryId": "q11",
+   "docId": "cotas-e-armazenamento",
+   "grade": 3
+  },
+  {
+   "queryId": "q11",
+   "docId": "api-reference-errors",
+   "grade": 2
+  },
+  {
+   "queryId": "q11",
+   "docId": "rate-limits",
+   "grade": 1
+  },
+  {
+   "queryId": "q12",
+   "docId": "cotas-e-armazenamento",
+   "grade": 3
+  },
+  {
+   "queryId": "q12",
+   "docId": "faq-cobranca",
+   "grade": 1
+  },
+  {
+   "queryId": "q13",
+   "docId": "deploy-reverter-versao",
+   "grade": 3
+  },
+  {
+   "queryId": "q13",
+   "docId": "deploy-rollbacks",
+   "grade": 3
+  },
+  {
+   "queryId": "q13",
+   "docId": "deployments-guide",
+   "grade": 1
+  },
+  {
+   "queryId": "q14",
+   "docId": "deploy-rollbacks",
+   "grade": 3
+  },
+  {
+   "queryId": "q14",
+   "docId": "deployments-guide",
+   "grade": 2
+  },
+  {
+   "queryId": "q14",
+   "docId": "variaveis-de-ambiente",
+   "grade": 1
+  },
+  {
+   "queryId": "q15",
+   "docId": "deployments-guide",
+   "grade": 3
+  },
+  {
+   "queryId": "q15",
+   "docId": "changelog-2026",
+   "grade": 2
+  },
+  {
+   "queryId": "q16",
+   "docId": "webhooks-retries",
+   "grade": 3
+  },
+  {
+   "queryId": "q17",
+   "docId": "cache-de-build",
+   "grade": 3
+  },
+  {
+   "queryId": "q17",
+   "docId": "deployments-guide",
+   "grade": 1
+  },
+  {
+   "queryId": "q18",
+   "docId": "variaveis-de-ambiente",
+   "grade": 3
+  },
+  {
+   "queryId": "q18",
+   "docId": "deployments-guide",
+   "grade": 2
+  },
+  {
+   "queryId": "q19",
+   "docId": "regioes-e-latencia",
+   "grade": 3
+  },
+  {
+   "queryId": "q20",
+   "docId": "guia-observabilidade",
+   "grade": 3
+  },
+  {
+   "queryId": "q21",
+   "docId": "guia-observabilidade",
+   "grade": 3
+  },
+  {
+   "queryId": "q21",
+   "docId": "data-retention-gdpr",
+   "grade": 3
+  },
+  {
+   "queryId": "q22",
+   "docId": "log-drains",
+   "grade": 3
+  },
+  {
+   "queryId": "q22",
+   "docId": "guia-observabilidade",
+   "grade": 2
+  },
+  {
+   "queryId": "q23",
+   "docId": "guia-observabilidade",
+   "grade": 3
+  },
+  {
+   "queryId": "q24",
+   "docId": "alertas-de-uso",
+   "grade": 3
+  },
+  {
+   "queryId": "q24",
+   "docId": "faq-cobranca",
+   "grade": 1
+  },
+  {
+   "queryId": "q25",
+   "docId": "alertas-de-uso",
+   "grade": 3
+  },
+  {
+   "queryId": "q25",
+   "docId": "api-reference-errors",
+   "grade": 2
+  },
+  {
+   "queryId": "q25",
+   "docId": "faq-cobranca",
+   "grade": 1
+  },
+  {
+   "queryId": "q26",
+   "docId": "runbook-failover-banco-de-dados",
+   "grade": 3
+  },
+  {
+   "queryId": "q27",
+   "docId": "runbook-failover-banco-de-dados",
+   "grade": 3
+  },
+  {
+   "queryId": "q27",
+   "docId": "api-reference-errors",
+   "grade": 1
+  },
+  {
+   "queryId": "q28",
+   "docId": "runbook-failover-banco-de-dados",
+   "grade": 3
+  },
+  {
+   "queryId": "q28",
+   "docId": "runbook-elevated-5xx",
+   "grade": 1
+  },
+  {
+   "queryId": "q29",
+   "docId": "gerenciamento-de-equipe",
+   "grade": 3
+  },
+  {
+   "queryId": "q29",
+   "docId": "faq-autenticacao",
+   "grade": 3
+  },
+  {
+   "queryId": "q30",
+   "docId": "runbook-certificates-and-dns",
+   "grade": 3
+  },
+  {
+   "queryId": "q31",
+   "docId": "runbook-certificates-and-dns",
+   "grade": 3
+  },
+  {
+   "queryId": "q32",
+   "docId": "api-reference-errors",
+   "grade": 3
+  },
+  {
+   "queryId": "q32",
+   "docId": "runbook-elevated-5xx",
+   "grade": 3
+  },
+  {
+   "queryId": "q33",
+   "docId": "runbook-elevated-5xx",
+   "grade": 3
+  },
+  {
+   "queryId": "q33",
+   "docId": "api-reference-errors",
+   "grade": 2
+  },
+  {
+   "queryId": "q33",
+   "docId": "deploy-reverter-versao",
+   "grade": 1
+  },
+  {
+   "queryId": "q33",
+   "docId": "deploy-rollbacks",
+   "grade": 1
+  },
+  {
+   "queryId": "q34",
+   "docId": "runbook-elevated-5xx",
+   "grade": 3
+  },
+  {
+   "queryId": "q34",
+   "docId": "runbook-failover-banco-de-dados",
+   "grade": 2
+  },
+  {
+   "queryId": "q35",
+   "docId": "api-reference-errors",
+   "grade": 3
+  },
+  {
+   "queryId": "q35",
+   "docId": "faq-autenticacao",
+   "grade": 3
+  },
+  {
+   "queryId": "q36",
+   "docId": "faq-autenticacao",
+   "grade": 3
+  },
+  {
+   "queryId": "q36",
+   "docId": "oauth-client-credentials",
+   "grade": 1
+  },
+  {
+   "queryId": "q37",
+   "docId": "oauth-client-credentials",
+   "grade": 3
+  },
+  {
+   "queryId": "q37",
+   "docId": "faq-autenticacao",
+   "grade": 2
+  },
+  {
+   "queryId": "q38",
+   "docId": "sso-saml-equipes",
+   "grade": 3
+  },
+  {
+   "queryId": "q38",
+   "docId": "faq-autenticacao",
+   "grade": 1
+  },
+  {
+   "queryId": "q39",
+   "docId": "sso-saml-equipes",
+   "grade": 3
+  },
+  {
+   "queryId": "q39",
+   "docId": "faq-autenticacao",
+   "grade": 1
+  },
+  {
+   "queryId": "q40",
+   "docId": "gerenciamento-de-equipe",
+   "grade": 3
+  },
+  {
+   "queryId": "q41",
+   "docId": "gerenciamento-de-equipe",
+   "grade": 3
+  },
+  {
+   "queryId": "q41",
+   "docId": "faq-cobranca",
+   "grade": 3
+  },
+  {
+   "queryId": "q42",
+   "docId": "refund-policy",
+   "grade": 3
+  },
+  {
+   "queryId": "q42",
+   "docId": "faq-cobranca",
+   "grade": 2
+  },
+  {
+   "queryId": "q43",
+   "docId": "failed-payments",
+   "grade": 3
+  },
+  {
+   "queryId": "q43",
+   "docId": "faq-cobranca",
+   "grade": 3
+  },
+  {
+   "queryId": "q44",
+   "docId": "invoices",
+   "grade": 3
+  },
+  {
+   "queryId": "q45",
+   "docId": "nota-fiscal",
+   "grade": 3
+  },
+  {
+   "queryId": "q45",
+   "docId": "faq-cobranca",
+   "grade": 2
+  },
+  {
+   "queryId": "q46",
+   "docId": "status-page-and-sla",
+   "grade": 3
+  },
+  {
+   "queryId": "q47",
+   "docId": "status-page-and-sla",
+   "grade": 3
+  },
+  {
+   "queryId": "q47",
+   "docId": "runbook-elevated-5xx",
+   "grade": 1
+  },
+  {
+   "queryId": "q48",
+   "docId": "lgpd-direitos-do-titular",
+   "grade": 3
+  },
+  {
+   "queryId": "q48",
+   "docId": "data-retention-gdpr",
+   "grade": 1
+  },
+  {
+   "queryId": "q49",
+   "docId": "data-retention-gdpr",
+   "grade": 3
+  },
+  {
+   "queryId": "q50",
+   "docId": "nota-fiscal",
+   "grade": 2
+  },
+  {
+   "queryId": "q50",
+   "docId": "faq-cobranca",
+   "grade": 2
+  },
+  {
+   "queryId": "q50",
+   "docId": "changelog-2026",
+   "grade": 1
+  },
+  {
+   "queryId": "q51",
+   "docId": "recibo-de-pagamento",
+   "grade": 2
+  },
+  {
+   "queryId": "q51",
+   "docId": "invoices",
+   "grade": 2
+  },
+  {
+   "queryId": "q51",
+   "docId": "nota-fiscal",
+   "grade": 2
+  },
+  {
+   "queryId": "q52",
+   "docId": "webhooks-signature-verification",
+   "grade": 2
+  },
+  {
+   "queryId": "q52",
+   "docId": "api-keys-rotation",
+   "grade": 2
+  },
+  {
+   "queryId": "q52",
+   "docId": "faq-autenticacao",
+   "grade": 1
+  },
+  {
+   "queryId": "q53",
+   "docId": "migration-guide-v1-v2",
+   "grade": 2
+  },
+  {
+   "queryId": "q53",
+   "docId": "webhooks-signature-verification",
+   "grade": 2
+  },
+  {
+   "queryId": "q53",
+   "docId": "webhooks-verificar-assinatura",
+   "grade": 1
+  },
+  {
+   "queryId": "q54",
+   "docId": "canais-de-suporte",
+   "grade": 3
+  },
+  {
+   "queryId": "q55",
+   "docId": "sdks",
+   "grade": 3
+  },
+  {
+   "queryId": "q56",
+   "docId": "migration-guide-v1-v2",
+   "grade": 3
+  },
+  {
+   "queryId": "q56",
+   "docId": "changelog-2026",
+   "grade": 2
+  },
+  {
+   "queryId": "q56",
+   "docId": "sdks",
+   "grade": 2
+  },
+  {
+   "queryId": "q57",
+   "docId": "migration-guide-v1-v2",
+   "grade": 3
+  },
+  {
+   "queryId": "q57",
+   "docId": "sdks",
+   "grade": 1
+  },
+  {
+   "queryId": "q58",
+   "docId": "runbook-fila-de-webhooks",
+   "grade": 3
+  },
+  {
+   "queryId": "q58",
+   "docId": "webhooks-retries",
+   "grade": 1
+  },
+  {
+   "queryId": "q59",
+   "docId": "recibo-de-pagamento",
+   "grade": 3
+  },
+  {
+   "queryId": "q60",
+   "docId": "faq-autenticacao",
+   "grade": 3
+  },
+  {
+   "queryId": "q60",
+   "docId": "api-keys-rotation",
+   "grade": 2
+  }
+ ]
+}

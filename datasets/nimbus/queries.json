@@ -1,0 +1,426 @@
+[
+  {
+    "id": "q01",
+    "text": "rotate API key grace period",
+    "lang": "en",
+    "tags": ["keyword"],
+    "relevant": { "api-keys-rotation": 3, "faq-autenticacao": 2 }
+  },
+  {
+    "id": "q02",
+    "text": "como faco rotacao de chave de api sem derrubar a aplicacao",
+    "lang": "pt",
+    "tags": ["no-accents"],
+    "relevant": { "faq-autenticacao": 3, "api-keys-rotation": 3 }
+  },
+  {
+    "id": "q03",
+    "text": "Nimbus-Signature header HMAC",
+    "lang": "en",
+    "tags": ["keyword"],
+    "relevant": {
+      "webhooks-signature-verification": 3,
+      "webhooks-verificar-assinatura": 3,
+      "migration-guide-v1-v2": 1,
+      "sdks": 1
+    }
+  },
+  {
+    "id": "q04",
+    "text": "como saber se a requisição que chegou no meu endpoint foi mesmo enviada pela Nimbus",
+    "lang": "pt",
+    "tags": ["paraphrase"],
+    "relevant": { "webhooks-verificar-assinatura": 3, "webhooks-signature-verification": 3 }
+  },
+  {
+    "id": "q05",
+    "text": "my endpoint keeps receiving the same event twice",
+    "lang": "en",
+    "tags": ["paraphrase", "cross-lingual"],
+    "relevant": { "webhooks-idempotencia": 3, "webhooks-retries": 2, "runbook-fila-de-webhooks": 1 }
+  },
+  {
+    "id": "q06",
+    "text": "how many times does Nimbus try to deliver an event again when my server is offline",
+    "lang": "en",
+    "tags": ["paraphrase"],
+    "relevant": { "webhooks-retries": 3, "runbook-fila-de-webhooks": 1 }
+  },
+  {
+    "id": "q07",
+    "text": "does the SDK automatically try again when a call fails",
+    "lang": "en",
+    "tags": ["paraphrase"],
+    "relevant": { "api-client-retries": 3, "sdks": 2 }
+  },
+  {
+    "id": "q08",
+    "text": "429 Retry-After rate limit headers",
+    "lang": "en",
+    "tags": ["keyword"],
+    "relevant": { "rate-limits": 3, "limites-de-requisicao": 2, "api-reference-errors": 1 }
+  },
+  {
+    "id": "q09",
+    "text": "o que e burst no limite de requisicoes da api",
+    "lang": "pt",
+    "tags": ["no-accents", "cross-lingual"],
+    "relevant": { "rate-limits": 3, "limites-de-requisicao": 1 }
+  },
+  {
+    "id": "q10",
+    "text": "still getting too many requests errors after creating more API keys",
+    "lang": "en",
+    "tags": ["paraphrase"],
+    "relevant": { "rate-limits": 3, "limites-de-requisicao": 3 }
+  },
+  {
+    "id": "q11",
+    "text": "erro quota_exceeded cota excedida",
+    "lang": "pt",
+    "tags": ["keyword"],
+    "relevant": { "cotas-e-armazenamento": 3, "api-reference-errors": 2, "rate-limits": 1 }
+  },
+  {
+    "id": "q12",
+    "text": "quantos projetos posso criar no plano gratuito",
+    "lang": "pt",
+    "tags": ["paraphrase"],
+    "relevant": { "cotas-e-armazenamento": 3, "faq-cobranca": 1 }
+  },
+  {
+    "id": "q13",
+    "text": "como fazer rollback do deploy",
+    "lang": "pt",
+    "tags": ["keyword"],
+    "relevant": { "deploy-reverter-versao": 3, "deploy-rollbacks": 3, "deployments-guide": 1 }
+  },
+  {
+    "id": "q14",
+    "text": "after going back to an older release the app uses an outdated database password",
+    "lang": "en",
+    "tags": ["paraphrase"],
+    "relevant": { "deploy-rollbacks": 3, "deployments-guide": 2, "variaveis-de-ambiente": 1 }
+  },
+  {
+    "id": "q15",
+    "text": "canary deployment auto promote",
+    "lang": "en",
+    "tags": ["keyword", "long-doc"],
+    "relevant": { "deployments-guide": 3, "changelog-2026": 2 }
+  },
+  {
+    "id": "q16",
+    "text": "what happens if my webhook endpoint returns 410",
+    "lang": "en",
+    "tags": ["keyword"],
+    "relevant": { "webhooks-retries": 3 }
+  },
+  {
+    "id": "q17",
+    "text": "cache de build nao e invalidado quando mudo as dependencias",
+    "lang": "pt",
+    "tags": ["no-accents"],
+    "relevant": { "cache-de-build": 3, "deployments-guide": 1 }
+  },
+  {
+    "id": "q18",
+    "text": "mudei uma variável e a aplicação continua lendo o valor antigo",
+    "lang": "pt",
+    "tags": ["paraphrase"],
+    "relevant": { "variaveis-de-ambiente": 3, "deployments-guide": 2 }
+  },
+  {
+    "id": "q19",
+    "text": "meus usuários estão no Brasil, onde devo hospedar a aplicação para ela responder mais rápido?",
+    "lang": "pt",
+    "tags": ["paraphrase"],
+    "relevant": { "regioes-e-latencia": 3 }
+  },
+  {
+    "id": "q20",
+    "text": "como acompanhar os logs em tempo real pelo terminal",
+    "lang": "pt",
+    "tags": ["long-doc"],
+    "relevant": { "guia-observabilidade": 3 }
+  },
+  {
+    "id": "q21",
+    "text": "retenção de logs por plano",
+    "lang": "pt",
+    "tags": ["keyword"],
+    "relevant": { "guia-observabilidade": 3, "data-retention-gdpr": 3 }
+  },
+  {
+    "id": "q22",
+    "text": "log drain to Datadog",
+    "lang": "en",
+    "tags": ["keyword"],
+    "relevant": { "log-drains": 3, "guia-observabilidade": 2 }
+  },
+  {
+    "id": "q23",
+    "text": "configurar alerta de latencia e erros 5xx no slack",
+    "lang": "pt",
+    "tags": ["no-accents", "long-doc"],
+    "relevant": { "guia-observabilidade": 3 }
+  },
+  {
+    "id": "q24",
+    "text": "quero ser avisado antes de a conta do mês ficar cara demais",
+    "lang": "pt",
+    "tags": ["paraphrase"],
+    "relevant": { "alertas-de-uso": 3, "faq-cobranca": 1 }
+  },
+  {
+    "id": "q25",
+    "text": "o limite rígido do orçamento bloqueia os builds?",
+    "lang": "pt",
+    "tags": ["keyword"],
+    "relevant": { "alertas-de-uso": 3, "api-reference-errors": 2, "faq-cobranca": 1 }
+  },
+  {
+    "id": "q26",
+    "text": "quanto tempo demora o failover automático do banco",
+    "lang": "pt",
+    "tags": ["long-doc"],
+    "relevant": { "runbook-failover-banco-de-dados": 3 }
+  },
+  {
+    "id": "q27",
+    "text": "comando de failover manual do bano de dados",
+    "lang": "pt",
+    "tags": ["typo", "long-doc"],
+    "relevant": { "runbook-failover-banco-de-dados": 3, "api-reference-errors": 1 }
+  },
+  {
+    "id": "q28",
+    "text": "aplicação não reconecta no postgres depois que o primário mudou",
+    "lang": "pt",
+    "tags": ["morphology", "long-doc"],
+    "relevant": { "runbook-failover-banco-de-dados": 3, "runbook-elevated-5xx": 1 }
+  },
+  {
+    "id": "q29",
+    "text": "obrigar todo mundo da equipe a usar autenticação em dois fatores",
+    "lang": "pt",
+    "tags": ["paraphrase"],
+    "relevant": { "gerenciamento-de-equipe": 3, "faq-autenticacao": 3 }
+  },
+  {
+    "id": "q30",
+    "text": "qual o valor do CNAME para apontar meu subdomínio para a Nimbus",
+    "lang": "pt",
+    "tags": ["cross-lingual", "long-doc"],
+    "relevant": { "runbook-certificates-and-dns": 3 }
+  },
+  {
+    "id": "q31",
+    "text": "browser says my site is not secure on our own domain",
+    "lang": "en",
+    "tags": ["paraphrase"],
+    "relevant": { "runbook-certificates-and-dns": 3 }
+  },
+  {
+    "id": "q32",
+    "text": "504 upstream_timeout",
+    "lang": "en",
+    "tags": ["keyword"],
+    "relevant": { "api-reference-errors": 3, "runbook-elevated-5xx": 3 }
+  },
+  {
+    "id": "q33",
+    "text": "minha aplicação começou a dar erro 502 depois do deploy, o que fazer?",
+    "lang": "pt",
+    "tags": ["cross-lingual", "paraphrase"],
+    "relevant": {
+      "runbook-elevated-5xx": 3,
+      "api-reference-errors": 2,
+      "deploy-reverter-versao": 1,
+      "deploy-rollbacks": 1
+    }
+  },
+  {
+    "id": "q34",
+    "text": "too many conections postgres pooler",
+    "lang": "en",
+    "tags": ["typo"],
+    "relevant": { "runbook-elevated-5xx": 3, "runbook-failover-banco-de-dados": 2 }
+  },
+  {
+    "id": "q35",
+    "text": "insufficient_scope error",
+    "lang": "en",
+    "tags": ["keyword"],
+    "relevant": { "api-reference-errors": 3, "faq-autenticacao": 3 }
+  },
+  {
+    "id": "q36",
+    "text": "permissoes disponiveis para uma chave de api",
+    "lang": "pt",
+    "tags": ["no-accents", "long-doc"],
+    "relevant": { "faq-autenticacao": 3, "oauth-client-credentials": 1 }
+  },
+  {
+    "id": "q37",
+    "text": "o token de acesso expira em uma hora, como renovar sem refresh token?",
+    "lang": "pt",
+    "tags": ["cross-lingual"],
+    "relevant": { "oauth-client-credentials": 3, "faq-autenticacao": 2 }
+  },
+  {
+    "id": "q38",
+    "text": "configurar SSO SAML com Okta",
+    "lang": "pt",
+    "tags": ["keyword"],
+    "relevant": { "sso-saml-equipes": 3, "faq-autenticacao": 1 }
+  },
+  {
+    "id": "q39",
+    "text": "make everyone on the team sign in with our company Google account",
+    "lang": "en",
+    "tags": ["paraphrase", "cross-lingual"],
+    "relevant": { "sso-saml-equipes": 3, "faq-autenticacao": 1 }
+  },
+  {
+    "id": "q40",
+    "text": "convidei um desenvolvedor mas o convite expirou",
+    "lang": "pt",
+    "tags": ["morphology", "paraphrase"],
+    "relevant": { "gerenciamento-de-equipe": 3 }
+  },
+  {
+    "id": "q41",
+    "text": "membro com papel viewer paga assento?",
+    "lang": "pt",
+    "tags": ["keyword"],
+    "relevant": { "gerenciamento-de-equipe": 3, "faq-cobranca": 3 }
+  },
+  {
+    "id": "q42",
+    "text": "refund annual plan",
+    "lang": "en",
+    "tags": ["keyword"],
+    "relevant": { "refund-policy": 3, "faq-cobranca": 2 }
+  },
+  {
+    "id": "q43",
+    "text": "cartao recusado o que acontece com a conta",
+    "lang": "pt",
+    "tags": ["no-accents"],
+    "relevant": { "failed-payments": 3, "faq-cobranca": 3 }
+  },
+  {
+    "id": "q44",
+    "text": "invoicing date and downloading invoices as PDF",
+    "lang": "en",
+    "tags": ["morphology"],
+    "relevant": { "invoices": 3 }
+  },
+  {
+    "id": "q45",
+    "text": "nota fiscal NFS-e com CNPJ",
+    "lang": "pt",
+    "tags": ["keyword"],
+    "relevant": { "nota-fiscal": 3, "faq-cobranca": 2 }
+  },
+  {
+    "id": "q46",
+    "text": "sla de disponibilidade e credito por indisponibilidde",
+    "lang": "pt",
+    "tags": ["typo", "no-accents", "cross-lingual"],
+    "relevant": { "status-page-and-sla": 3 }
+  },
+  {
+    "id": "q47",
+    "text": "where can I check if Nimbus is down right now",
+    "lang": "en",
+    "tags": ["paraphrase"],
+    "relevant": { "status-page-and-sla": 3, "runbook-elevated-5xx": 1 }
+  },
+  {
+    "id": "q48",
+    "text": "LGPD data subject request deadline",
+    "lang": "en",
+    "tags": ["cross-lingual"],
+    "relevant": { "lgpd-direitos-do-titular": 3, "data-retention-gdpr": 1 }
+  },
+  {
+    "id": "q49",
+    "text": "exportar todos os dados da organização",
+    "lang": "pt",
+    "tags": ["cross-lingual"],
+    "relevant": { "data-retention-gdpr": 3 }
+  },
+  {
+    "id": "q50",
+    "text": "pagar com pix e receber a nota fiscal no CNPJ da empresa",
+    "lang": "pt",
+    "tags": ["multi-doc"],
+    "relevant": { "nota-fiscal": 2, "faq-cobranca": 2, "changelog-2026": 1 }
+  },
+  {
+    "id": "q51",
+    "text": "diferença entre fatura, recibo e nota fiscal",
+    "lang": "pt",
+    "tags": ["multi-doc"],
+    "relevant": { "recibo-de-pagamento": 2, "invoices": 2, "nota-fiscal": 2 }
+  },
+  {
+    "id": "q52",
+    "text": "how to rotate both the webhook signing secret and the API keys",
+    "lang": "en",
+    "tags": ["multi-doc"],
+    "relevant": { "webhooks-signature-verification": 2, "api-keys-rotation": 2, "faq-autenticacao": 1 }
+  },
+  {
+    "id": "q53",
+    "text": "migrate webhook endpoints from v1 to v2 signatures and verify the new header",
+    "lang": "en",
+    "tags": ["multi-doc"],
+    "relevant": { "migration-guide-v1-v2": 2, "webhooks-signature-verification": 2, "webhooks-verificar-assinatura": 1 }
+  },
+  {
+    "id": "q54",
+    "text": "how fast does support answer on the Pro plan",
+    "lang": "en",
+    "tags": ["cross-lingual"],
+    "relevant": { "canais-de-suporte": 3 }
+  },
+  { "id": "q55", "text": "python sdk minimum version", "lang": "en", "tags": ["keyword"], "relevant": { "sdks": 3 } },
+  {
+    "id": "q56",
+    "text": "when will API v1 stop working",
+    "lang": "en",
+    "tags": ["paraphrase"],
+    "relevant": { "migration-guide-v1-v2": 3, "changelog-2026": 2, "sdks": 2 }
+  },
+  {
+    "id": "q57",
+    "text": "cursor pagination starting_after",
+    "lang": "en",
+    "tags": ["long-doc"],
+    "relevant": { "migration-guide-v1-v2": 3, "sdks": 1 }
+  },
+  {
+    "id": "q58",
+    "text": "webhooks atrasados com fila acumulando",
+    "lang": "pt",
+    "tags": ["keyword"],
+    "relevant": { "runbook-fila-de-webhooks": 3, "webhooks-retries": 1 }
+  },
+  {
+    "id": "q59",
+    "text": "recibo nao chegou depois do pagamento",
+    "lang": "pt",
+    "tags": ["no-accents"],
+    "relevant": { "recibo-de-pagamento": 3 }
+  },
+  {
+    "id": "q60",
+    "text": "chave de api vazou no github",
+    "lang": "pt",
+    "tags": ["long-doc"],
+    "relevant": { "faq-autenticacao": 3, "api-keys-rotation": 2 }
+  }
+]

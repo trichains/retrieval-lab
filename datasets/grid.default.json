@@ -1,0 +1,19 @@
+{
+  "name": "default",
+  "chunkers": [
+    { "type": "none" },
+    { "type": "fixed-chars", "size": 500, "overlap": 100 },
+    { "type": "sentence", "maxChars": 500 },
+    { "type": "markdown", "maxChars": 800 },
+    { "type": "recursive", "size": 500, "overlap": 100 }
+  ],
+  "retrievers": [
+    { "type": "bm25" },
+    { "type": "vector" },
+    { "type": "hybrid", "fusion": { "type": "rrf", "k": 60 } },
+    { "type": "hybrid", "fusion": { "type": "weighted", "alpha": 0.5 } }
+  ],
+  "rerankers": [{ "type": "none" }],
+  "cutoffs": [5, 10],
+  "bootstrap": { "samples": 2000, "seed": 42 }
+}
