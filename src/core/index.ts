@@ -14,6 +14,7 @@ export {
   analyzeTokens,
   DEFAULT_ANALYZER,
   detectLanguage,
+  documentLanguage,
   resolveLanguage,
   stemsFor,
   type AnalyzedToken,
@@ -30,7 +31,9 @@ export { Bm25Index, DEFAULT_BM25, type Bm25Options, type TermContribution } from
 export { cosine, dot, l2Normalize, type Embedder } from "./retrieval/embedder";
 export { DEFAULT_HASHING, HashingEmbedder, type HashingEmbedderOptions } from "./retrieval/hashing-embedder";
 export {
+  checkEmbeddingBaseUrl,
   EmbeddingRequestError,
+  EmbeddingUrlError,
   OpenAICompatibleEmbedder,
   type OpenAICompatibleEmbedderOptions,
 } from "./retrieval/openai-embedder";

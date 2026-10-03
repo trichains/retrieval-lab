@@ -1,18 +1,30 @@
 import { chunkCorpus, type Chunk, type SourceDocument } from "../chunking";
-import type { ChunkerConfig, EmbedderConfig, PipelineConfig, RetrieverConfig } from "../config";
-import { analyze, type AnalyzerOptions } from "../text/analyzer";
+import {
+  RERANK_AGGREGATION_MESSAGE,
+  rerankerAggregationOk,
+  type ChunkerConfig,
+  type EmbedderConfig,
+  type PipelineConfig,
+  type RetrieverConfig,
+} from "../config";
+import { analyze, documentLanguage, type AnalyzerOptions } from "../text/analyzer";
 import { normalizeText } from "../text/normalize";
 import { aggregateToDocs, type DocHit } from "./aggregate";
 import { Bm25Index } from "./bm25";
 import type { Embedder } from "./embedder";
 import { reciprocalRankFusion, weightedFusion } from "./fusion";
 import { HashingEmbedder } from "./hashing-embedder";
-import { OpenAICompatibleEmbedder } from "./openai-embedder";
+import { EmbeddingUrlError, OpenAICompatibleEmbedder } from "./openai-embedder";
 import { lexicalRerank, mmrRerank } from "./rerank";
 import type { Hit, IndexItem, ScoredId } from "./types";
 import { VectorIndex } from "./vector-index";
 
 export interface EmbedderFactoryOptions {
+  /**
+   * Base URL for network embedders. Supplied by the caller (CLI flag or environment), never read
+   * from a grid or pipeline config. Validated by `checkEmbeddingBaseUrl`.
+   */
+  baseUrl?: string;
   apiKey?: string;
   fetch?: typeof fetch;
 }
@@ -21,8 +33,13 @@ export function createEmbedder(config: EmbedderConfig, options: EmbedderFactoryO
   if (config.type === "hashing") {
     return new HashingEmbedder({ dims: config.dims, bigramWeight: config.bigramWeight, charWeight: config.charWeight });
   }
+  if (!options.baseUrl) {
+    throw new EmbeddingUrlError(
+      "The openai embedder needs a base URL from --embed-url or RLAB_EMBEDDINGS_BASE_URL (configs cannot set one)",
+    );
+  }
   return new OpenAICompatibleEmbedder({
-    baseUrl: config.baseUrl,
+    baseUrl: options.baseUrl,
     model: config.model,
     dimensions: config.dimensions,
     batchSize: config.batchSize,
@@ -53,6 +70,7 @@ export class IndexCache {
   private readonly docsById: Map<string, SourceDocument>;
   private readonly embedderOptions: EmbedderFactoryOptions;
   private readonly chunkCache = new Map<string, Chunk[]>();
+  private readonly langCache = new Map<string, string | undefined>();
   private readonly itemCache = new Map<string, IndexItem[]>();
   private readonly bm25Cache = new Map<string, Bm25Index>();
   private readonly vectorCache = new Map<string, Promise<VectorIndex>>();
@@ -61,6 +79,15 @@ export class IndexCache {
     this.docs = docs;
     this.docsById = new Map(docs.map((d) => [d.id, d]));
     this.embedderOptions = embedderOptions;
+  }
+
+  /** Language of a document, resolved once (from its text when it has no pt/en `lang`) and cached. */
+  languageOf(docId: string): string | undefined {
+    if (this.langCache.has(docId)) return this.langCache.get(docId);
+    const doc = this.docsById.get(docId);
+    const lang = doc ? documentLanguage(doc) : undefined;
+    this.langCache.set(docId, lang);
+    return lang;
   }
 
   document(id: string): SourceDocument | undefined {
@@ -80,12 +107,13 @@ export class IndexCache {
     if (!items) {
       items = this.chunks(config).map((chunk) => {
         const doc = this.docsById.get(chunk.docId);
+        const lang = this.languageOf(chunk.docId);
         const header = contextHeaders ? contextHeader(doc?.title, chunk.headingPath) : "";
         return {
           id: chunk.id,
           docId: chunk.docId,
           text: header ? `${header}\n${chunk.text}` : chunk.text,
-          lang: doc?.lang,
+          lang,
         };
       });
       this.itemCache.set(key, items);
@@ -126,6 +154,8 @@ export interface PipelineHit {
   chunk: Chunk;
   /** The text that was actually indexed (chunk text, possibly with a context header). */
   indexedText: string;
+  /** Language used to analyze this chunk: the document's, resolved once per document. */
+  lang?: string;
   /** Final score after fusion and reranking. After a reranker this is rank-derived, see `search`. */
   score: number;
   /** Final 1-based rank. */
@@ -190,6 +220,7 @@ export class RetrievalPipeline {
     config: PipelineConfig,
     embedderOptions: EmbedderFactoryOptions = {},
   ): Promise<RetrievalPipeline> {
+    if (!rerankerAggregationOk(config)) throw new RangeError(RERANK_AGGREGATION_MESSAGE);
     const cache = docs instanceof IndexCache ? docs : new IndexCache(docs, embedderOptions);
     const r: RetrieverConfig = config.retriever;
     const bm25 =
@@ -216,9 +247,24 @@ export class RetrievalPipeline {
     return [...new Set(analyze(query, this.config.analyzer))];
   }
 
+  /**
+   * Retrieves chunks, fuses, reranks and aggregates to documents. The chunk depth starts at
+   * max(5k, 50) and doubles until at least k distinct documents are retrieved or the index is
+   * exhausted, so small chunks cannot starve the document ranking (which would bias recall and nDCG
+   * down for fine-grained chunkers).
+   */
   async search(query: string, options: SearchOptions = {}): Promise<SearchResult> {
     const k = options.k ?? 10;
-    const depth = Math.max(options.depth ?? Math.max(5 * k, 50), k);
+    let depth = Math.max(options.depth ?? Math.max(5 * k, 50), k);
+    for (;;) {
+      const result = await this.searchAtDepth(query, k, depth);
+      const exhausted = result.depth < depth || depth >= this.chunks.length;
+      if (result.rankedDocIds.length >= k || exhausted) return result;
+      depth *= 2;
+    }
+  }
+
+  private async searchAtDepth(query: string, k: number, depth: number): Promise<SearchResult> {
     const r = this.config.retriever;
     const signals = new Map<string, PipelineHit["signals"]>();
     const signalOf = (id: string) => {
@@ -284,6 +330,7 @@ export class RetrievalPipeline {
     const hits: PipelineHit[] = list.slice(0, k).map((hit, i) => ({
       chunk: this.chunkById.get(hit.id)!,
       indexedText: this.items.get(hit.id)!.text,
+      lang: this.items.get(hit.id)!.lang,
       score: hit.score,
       rank: i + 1,
       signals: signals.get(hit.id) ?? {},

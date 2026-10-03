@@ -37,9 +37,22 @@ export function detectLanguage(text: string): DetectedLanguage {
   return "unknown";
 }
 
+/**
+ * The language to analyze `text` with. "pt" and "en" hints are trusted; an explicit "unknown" hint
+ * is kept as is (no re-detection, so a document whose language was resolved once stays consistent
+ * across all its chunks); anything else is detected from the text.
+ */
 export function resolveLanguage(text: string, hint?: string): DetectedLanguage {
-  if (hint === "pt" || hint === "en") return hint;
+  if (hint === "pt" || hint === "en" || hint === "unknown") return hint;
   return detectLanguage(text);
+}
+
+/**
+ * A document's language, resolved once from its whole text when it has no usable `lang`. Use it
+ * for every chunk of the document so one document never mixes stemmers.
+ */
+export function documentLanguage(doc: { text: string; title?: string; lang?: string }): DetectedLanguage {
+  return resolveLanguage(`${doc.title ?? ""}\n${doc.text}`, doc.lang);
 }
 
 /** Stems for one normalized token. Usually one, two when the language is unknown and they differ. */

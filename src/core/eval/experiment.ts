@@ -1,5 +1,5 @@
 import { describePipeline, GridSchema, type Grid, type GridInput, type PipelineConfig } from "../config";
-import { analyze } from "../text/analyzer";
+import { analyze, documentLanguage } from "../text/analyzer";
 import { IndexCache, RetrievalPipeline, type EmbedderFactoryOptions } from "../retrieval/pipeline";
 import { qrelsByQuery, type Dataset } from "./dataset";
 import { computeMetrics, mean, metricKeys } from "./metrics";
@@ -82,7 +82,10 @@ export async function runExperiment(
   const primaryMetric = `ndcg@${maxCutoff}`;
   const cache = new IndexCache(dataset.documents, options.embedderOptions);
   const docTerms = new Map(
-    dataset.documents.map((d) => [d.id, new Set(analyze(`${d.title ?? ""}\n${d.text}`, grid.analyzer, d.lang))]),
+    dataset.documents.map((d) => [
+      d.id,
+      new Set(analyze(`${d.title ?? ""}\n${d.text}`, grid.analyzer, documentLanguage(d))),
+    ]),
   );
   const configs = expandGrid(grid);
   const results: ConfigResult[] = [];
