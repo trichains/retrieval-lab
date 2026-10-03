@@ -49,6 +49,19 @@ test.describe("experiments", () => {
     await expect(page).toHaveURL(/q=q\d+/);
   });
 
+  test("the heatmap is a single tab stop navigable with arrow keys", async ({ page }) => {
+    await page.goto("/en/experiments");
+    await expect(page.locator("#results-heading")).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator('[data-cell][tabindex="0"]')).toHaveCount(1);
+    await page.locator('[data-cell="0-0"]').focus();
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowDown");
+    await expect(page.locator('[data-cell="1-1"]')).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("heading", { name: "Query detail" })).toBeVisible();
+    await expect(page.locator('[data-cell][tabindex="0"]')).toHaveCount(1);
+  });
+
   test("switching the metric re-sorts the table", async ({ page }) => {
     await page.goto("/en/experiments?m=recall%405");
     await expect(page.locator("#results-heading")).toBeVisible({ timeout: 60_000 });

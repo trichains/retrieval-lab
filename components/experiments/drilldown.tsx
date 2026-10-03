@@ -69,7 +69,7 @@ export function DrillDown({
         <p className="mt-1 text-[0.72rem] text-faint">– {dict.experiments.rankNone}</p>
       )}
 
-      <h4 className="mt-4 text-[0.78rem] font-medium text-muted">{dict.experiments.retrievedDocs}</h4>
+      <h4 className="mt-4 text-[0.78rem] font-medium text-muted">{dict.experiments.retrievedDocs(cutoff)}</h4>
       <ol className="mt-1.5 space-y-1">
         {query.retrieved.slice(0, cutoff).map((d, i) => (
           <li key={d.docId} className="flex items-baseline gap-2 text-[0.8rem]">

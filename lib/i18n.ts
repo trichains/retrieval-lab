@@ -27,7 +27,8 @@ const ptBR = {
     docs: (n: number) => `${n} ${n === 1 ? "documento" : "documentos"}`,
   },
   footer: {
-    privacy: "Tudo roda no seu navegador. Nenhum texto, consulta ou arquivo sai desta página.",
+    privacy:
+      "O corpus e as consultas são processados no seu navegador; nada é enviado a servidor algum. A consulta fica na URL para que o link possa ser compartilhado.",
     license: "Código aberto, licença MIT.",
     dataset: "O corpus Nimbus é fictício e foi escrito para este projeto.",
   },
@@ -151,6 +152,8 @@ const ptBR = {
     ci: "IC 95% do Δ",
     pValue: "p (bootstrap)",
     wlt: "B venceu / perdeu / empatou",
+    multipleNote:
+      "Com muitas configurações, esta é uma comparação descritiva: não há correção para comparações múltiplas, e escolher a melhor e testá-la nos mesmos dados favorece o veredito.",
     verdictBetter: (metric: string) => `B é melhor que A em ${metric}, e a diferença se distingue do ruído.`,
     verdictWorse: (metric: string) => `B é pior que A em ${metric}, e a diferença se distingue do ruído.`,
     verdictNoise: "A diferença não se distingue do ruído com estas consultas.",
@@ -170,12 +173,12 @@ const ptBR = {
     } as Record<string, string>,
     heatmapHeading: "Consulta por consulta",
     heatmapLead:
-      "Cada célula é o valor da métrica para uma consulta. Linhas ordenadas da mais difícil para a mais fácil. Clique para ver por que falhou.",
+      "Cada célula é o valor da métrica para uma consulta. Linhas ordenadas da mais difícil para a mais fácil; colunas na ordem do ranking. Clique numa célula (ou use as setas do teclado) para ver por que falhou.",
     heatmapLegend: "0 → 1",
     drillHeading: "Detalhe da consulta",
     drillEmpty: "Selecione uma célula do mapa para ver os documentos relevantes e o que foi recuperado.",
     relevantDocs: "Documentos relevantes (julgados)",
-    retrievedDocs: "Top 10 recuperados",
+    retrievedDocs: (n: number) => `Top ${n} recuperados`,
     rankNone: "não recuperado",
     diagnosis: {
       ok: "Acertou: o primeiro resultado é relevante.",
@@ -244,7 +247,8 @@ const en: Dict = {
     docs: (n: number) => `${n} ${n === 1 ? "document" : "documents"}`,
   },
   footer: {
-    privacy: "Everything runs in your browser. No text, query or file leaves this page.",
+    privacy:
+      "Corpus and queries are processed in your browser; nothing is sent to any server. The query is kept in the URL so the link can be shared.",
     license: "Open source, MIT license.",
     dataset: "The Nimbus corpus is fictional and was written for this project.",
   },
@@ -368,6 +372,8 @@ const en: Dict = {
     ci: "95% CI of Δ",
     pValue: "p (bootstrap)",
     wlt: "B won / lost / tied",
+    multipleNote:
+      "With many configurations this is a descriptive comparison: there is no multiple-comparison correction, and picking the best and testing it on the same data favours the verdict.",
     verdictBetter: (metric: string) => `B beats A on ${metric}, and the difference is distinguishable from noise.`,
     verdictWorse: (metric: string) =>
       `B is worse than A on ${metric}, and the difference is distinguishable from noise.`,
@@ -388,12 +394,12 @@ const en: Dict = {
     },
     heatmapHeading: "Query by query",
     heatmapLead:
-      "Each cell is the metric for one query. Rows go from hardest to easiest. Click a cell to see why it failed.",
+      "Each cell is the metric for one query. Rows go from hardest to easiest; columns follow the ranking. Click a cell (or use the arrow keys) to see why it failed.",
     heatmapLegend: "0 → 1",
     drillHeading: "Query detail",
     drillEmpty: "Select a cell in the map to see the relevant documents and what was retrieved.",
     relevantDocs: "Relevant documents (judged)",
-    retrievedDocs: "Top 10 retrieved",
+    retrievedDocs: (n: number) => `Top ${n} retrieved`,
     rankNone: "not retrieved",
     diagnosis: {
       ok: "Hit: the first result is relevant.",

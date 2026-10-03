@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef, useState, type KeyboardEvent } from "react";
 import type { ConfigResult, ExperimentResult } from "@/src/core";
 import { useDict } from "@/lib/locale-context";
 import { cx } from "../ui";
@@ -147,10 +148,39 @@ export function Heatmap({
     })
     .sort((a, b) => a.mean - b.mean || a.queryId.localeCompare(b.queryId));
 
+  // Roving focus: only one cell is in the tab order; arrow keys, Home/End and PageUp/PageDown move
+  // between cells, so the map is one tab stop instead of one per cell.
+  const [active, setActive] = useState<{ row: number; col: number }>({ row: 0, col: 0 });
+  const tableRef = useRef<HTMLTableElement>(null);
+  const activeRow = Math.min(active.row, rows.length - 1);
+  const activeCol = Math.min(active.col, configs.length - 1);
+  const moveTo = (row: number, col: number) => {
+    const r = Math.max(0, Math.min(rows.length - 1, row));
+    const c = Math.max(0, Math.min(configs.length - 1, col));
+    setActive({ row: r, col: c });
+    tableRef.current?.querySelector<HTMLButtonElement>(`[data-cell="${r}-${c}"]`)?.focus();
+  };
+  const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>, row: number, col: number) => {
+    const moves: Record<string, [number, number]> = {
+      ArrowUp: [row - 1, col],
+      ArrowDown: [row + 1, col],
+      ArrowLeft: [row, col - 1],
+      ArrowRight: [row, col + 1],
+      Home: [row, 0],
+      End: [row, configs.length - 1],
+      PageUp: [row - 10, col],
+      PageDown: [row + 10, col],
+    };
+    const target = moves[event.key];
+    if (!target) return;
+    event.preventDefault();
+    moveTo(target[0], target[1]);
+  };
+
   return (
     <div>
       <div className="max-h-[34rem] overflow-auto rounded-md border border-line scrollbar-thin">
-        <table className="border-separate border-spacing-0 text-[0.72rem]">
+        <table ref={tableRef} className="border-separate border-spacing-0 text-[0.72rem]">
           <caption className="sr-only">{dict.experiments.heatmapHeading}</caption>
           <thead className="sticky top-0 z-10 bg-panel">
             <tr>
@@ -175,7 +205,7 @@ export function Heatmap({
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
+            {rows.map((row, rowIndex) => (
               <tr key={row.queryId}>
                 <th
                   scope="row"
@@ -192,6 +222,10 @@ export function Heatmap({
                     <td key={config.id} className="border-b border-line/60 p-0.5">
                       <button
                         type="button"
+                        data-cell={`${rowIndex}-${i}`}
+                        tabIndex={rowIndex === activeRow && i === activeCol ? 0 : -1}
+                        onKeyDown={(e) => onKeyDown(e, rowIndex, i)}
+                        onFocus={() => setActive({ row: rowIndex, col: i })}
                         onClick={() => onSelect({ queryId: row.queryId, configId: config.id })}
                         aria-label={`${row.queryId} · ${config.label}: ${metric} ${v.toFixed(3)}`}
                         aria-pressed={isSelected}

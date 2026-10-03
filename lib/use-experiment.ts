@@ -10,11 +10,13 @@ export interface ExperimentState {
   status: ExperimentStatus;
   progress: { done: number; total: number; label: string } | null;
   result: ExperimentResult | null;
+  /** The dataset `result` was computed on, so callers never show a result next to another dataset. */
+  dataset: Dataset | null;
   error: string | null;
   ms: number | null;
 }
 
-const IDLE: ExperimentState = { status: "idle", progress: null, result: null, error: null, ms: null };
+const IDLE: ExperimentState = { status: "idle", progress: null, result: null, dataset: null, error: null, ms: null };
 
 /**
  * Runs experiments in a Web Worker so the page stays responsive while a grid of configurations is
@@ -44,7 +46,7 @@ export function useExperiment() {
         if (msg.type === "progress") {
           setState((s) => ({ ...s, progress: { done: msg.done, total: msg.total, label: msg.label } }));
         } else if (msg.type === "done") {
-          setState({ status: "done", progress: null, result: msg.result, error: null, ms: msg.ms });
+          setState({ status: "done", progress: null, result: msg.result, dataset, error: null, ms: msg.ms });
           dispose();
         } else {
           setState((s) => ({ ...s, status: "error", progress: null, error: msg.message }));

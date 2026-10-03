@@ -67,7 +67,7 @@ export function ResultCard({
   const dict = useDict();
   const [expanded, setExpanded] = useState(false);
   const { chunk, signals } = hit;
-  const parts = highlightParts(chunk.text, queryTerms, analyzer, doc?.lang);
+  const parts = highlightParts(chunk.text, queryTerms, analyzer, hit.lang);
   const clipped = clipAroundMatch(parts, SNIPPET_CHARS);
   const shown = expanded ? parts : clipped.parts;
   const docLength = doc?.text.length ?? chunk.end;

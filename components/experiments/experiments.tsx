@@ -88,7 +88,8 @@ export function Experiments() {
     if (dataset && preset !== "custom") run(dataset, PRESETS[preset]);
   }, [dataset, preset, run]);
 
-  const result = experiment.result;
+  // Never show a result computed on another dataset (e.g. right after loading a new one).
+  const result = experiment.dataset === dataset ? experiment.result : null;
   const activeMetric = result && result.metricKeys.includes(metric) ? metric : (result?.primaryMetric ?? "ndcg@10");
   const ranked = useMemo(() => (result ? rankConfigs(result, activeMetric) : []), [result, activeMetric]);
   const byId = useMemo(() => new Map(result?.configs.map((c) => [c.id, c]) ?? []), [result]);
@@ -440,6 +441,9 @@ export function Experiments() {
                         label={`${dict.experiments.delta}: ${comparison.delta.toFixed(3)}, ${dict.experiments.ci} ${comparison.ci[0].toFixed(3)} ${comparison.ci[1].toFixed(3)}`}
                       />
                     </div>
+                    <p className="mt-3 max-w-xl text-[0.75rem] leading-relaxed text-faint">
+                      {dict.experiments.multipleNote}
+                    </p>
                   </div>
                   {tagRows.length > 0 && (
                     <div className="overflow-x-auto">
